@@ -14,7 +14,7 @@ all_datasets = [
 
 all_algorithms = [
     "mult",
-    "chals",
+    "bcd",
 ]
 
 # Tunable parameters shared by all datasets/algorithms.

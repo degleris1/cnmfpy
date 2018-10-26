@@ -6,15 +6,19 @@ from ..optimize import renormalize
 
 from .mult import mult_step
 from .chals import chals_step
+from .bcd import bcd_step
+from ..conv import tensor_conv
 
 
-ALGORITHMS = {'mult': mult_step, 'chals': chals_step}
+ALGORITHMS = {'mult': mult_step,
+              'chals': chals_step,
+              'bcd': bcd_step}
 
 
 def fit_alg(data, model, update_rule):
     m, n = data.shape
 
-    # initial loss
+    # Initial loss
     model.loss_hist = [model.score(data)]
     model.time_hist = [0.0]
     t0 = time.time()

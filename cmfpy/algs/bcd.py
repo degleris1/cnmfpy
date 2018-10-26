@@ -1,45 +1,31 @@
 import numpy as np
 import numpy.linalg as la
-from tqdm import trange
 
-from ..optimize import compute_gW, compute_gH, soft_thresh, compute_loss
-from ..regularize import compute_scfo_gW, compute_scfo_gH, compute_scfo_reg
+from ..optimize import compute_gW, compute_gH, compute_loss
+from ..regularize import compute_scfo_reg
+
+"""
+TODO add backtracking back in
+TODO add regularizers back in
+"""
 
 
-def fit_bcd(data, model, step_type='constant'):
-    N, T = data.shape
+def bcd_step(data, model):
+    step_size = 1 / la.norm(data)
 
-    itr = 0
-    model.loss_hist = []
+    # assert model.W.sum() > 0.1, "initialization test " + str(model.W.sum())
 
-    for itr in trange(model.n_iter_max):
+    W_grad = compute_gW(data, model.W, model.H)
+    model.W = np.maximum(model.W - step_size * W_grad, 0)
 
-        # compute gradient and step size of W
-        loss_1, grad_W = compute_gW(data, model.W, model.H)
-        grad_W += model.l2_scfo * compute_scfo_gW(data, model.W, model.H,
-                                                  model._kernel)
-        step_W = _scale_gW(data, grad_W, model, step_type)
+    # print("W", np.sum(np.abs(W_grad)), model.W.sum())
 
-        # update W
-        new_W = np.maximum(model.W - np.multiply(step_W, grad_W), 0)
-        model.W = soft_thresh(new_W, model.l1_W)
+    # assert model.W.sum() > 0.1, str(model.W.sum())
 
-        # compute gradient and step size of H
-        loss_2, grad_H = compute_gH(data, model.W, model.H)
-        grad_H += model.l2_scfo * compute_scfo_gH(data, model.W, model.H,
-                                                  model._kernel)
-        step_H = _scale_gH(data, grad_H, model, step_type)
+    H_grad = compute_gH(data, model.W, model.H)
+    model.H -= np.maximum(model.H - step_size * H_grad, 0)
 
-        # update H
-        new_H = np.maximum(model.H.shift(0) - np.multiply(step_H, grad_H), 0)
-        model.H = soft_thresh(new_H, model.l1_H)
-
-        model.loss_hist += [loss_1, loss_2]
-
-        # check convergence
-        prev_loss, new_loss = model.loss_hist[-2:]
-        if (np.abs(prev_loss - new_loss) < model.tol):
-            break
+    # print("H", np.sum(np.abs(H_grad)), model.H.sum())
 
 
 def _scale_gW(data, grad_W, model, step_type='constant'):

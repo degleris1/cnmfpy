@@ -16,12 +16,11 @@ def compute_gH(data, W, H):
 
     # compute residual and loss
     resid = est - data
-    loss = norm(resid)
 
     # compute grad
     Hgrad = tensor_transconv(W, resid)
 
-    return loss, Hgrad
+    return Hgrad
 
 
 def compute_gW(data, W, H):
@@ -33,7 +32,6 @@ def compute_gW(data, W, H):
 
     # compute residual and loss
     resid = est - data
-    loss = norm(resid)
 
     # TODO: replace with broadcasting
     Wgrad = np.empty(W.shape)
@@ -42,7 +40,7 @@ def compute_gW(data, W, H):
         # TODO verify calc
         Wgrad[l] = np.dot(resid[:, l:], shift_cols(H, l).T)
 
-    return loss, Wgrad
+    return Wgrad
 
 
 def soft_thresh(X, l):
