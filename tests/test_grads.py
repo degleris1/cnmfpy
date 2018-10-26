@@ -1,13 +1,17 @@
 import pytest
 import numpy as np
+import numpy.linalg as la
+from numpy.testing import assert_allclose
+
 from cmfpy.utils import ModelDimensions
 from cmfpy.optimize import compute_gH, compute_gW, compute_loss
 from cmfpy.datasets import Synthetic, SongbirdHVC
 from scipy.optimize import check_grad, approx_fprime
 
-TOL = 1e-4
-SEED = 1234
 # DATASETS = [Data().generate() for Data in (Synthetic, SongbirdHVC)]
+TOL = 1e-5
+EPS = 100 * np.sqrt(np.finfo(float).eps)
+SEED = 1234
 DATASETS = [Synthetic(sparsity=.2).generate()]
 
 
@@ -40,18 +44,9 @@ def test_gradients(data, L, K):
         w = w_vec.reshape(W.shape)
         return compute_gW(data, w, H).ravel()
 
-    eps = np.sqrt(np.finfo(float).eps)
-
-    approx_grad = approx_fprime(W.ravel(), loss_W, eps)
-    approx_grad /= np.linalg.norm(approx_grad)
-
+    approx_grad = approx_fprime(W.ravel(), loss_W, EPS)
     grad = compute_gW(data, W, H).ravel()
-    grad /= np.linalg.norm(grad)
-
-    assert np.linalg.norm(grad - approx_grad) < TOL, "W failed for " + str(eps)
-
-    # err = check_grad(f_W, g_W, W.ravel())
-    # assert err < (TOL * np.sqrt(W.size))
+    assert_allclose(approx_grad, grad, rtol=TOL)
 
     # Check gradient for H.
     def loss_H(h_vec):
@@ -62,13 +57,6 @@ def test_gradients(data, L, K):
         h = h_vec.reshape(H.shape)
         return compute_gW(data, W, h).ravel()
 
-    approx_grad = approx_fprime(H.ravel(), loss_H, eps)
-    approx_grad /= np.linalg.norm(approx_grad)
-
+    approx_grad = approx_fprime(H.ravel(), loss_H, EPS)
     grad = compute_gH(data, W, H).ravel()
-    grad /= np.linalg.norm(grad)
-
-    assert np.linalg.norm(grad - approx_grad) < TOL, "H failed"
-
-    # err = check_grad(f_H, g_H, H.ravel())
-    # assert err < (TOL * np.sqrt(H.size))
+    assert_allclose(approx_grad, grad, rtol=TOL)

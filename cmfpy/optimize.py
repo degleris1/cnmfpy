@@ -55,7 +55,7 @@ def compute_loss(data, W, H):
     Compute the loss of a CNMF factorization.
     """
     resid = tensor_conv(W, H) - data
-    return norm(resid)
+    return 0.5 * (norm(resid) ** 2)
 
 
 def compute_loadings(data, W, H):
