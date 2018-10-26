@@ -1,7 +1,7 @@
 import numpy as np  # Linear algebra
 import numpy.linalg as la
 
-from ..conv import tensor_conv, shift_and_stack, hunfold
+from ..conv import tensor_conv, shift_and_stack, hunfold, pad_shift_cols
 
 # TODO make EPSILON universal
 EPSILON = np.finfo(np.float).eps
@@ -10,11 +10,13 @@ EPSILON = np.finfo(np.float).eps
 def chals_step(data, model):
     update_W(model.W, model.H, data)
 
-    assert model.score(data) >= model.loss_hist[-1], "W prob"
+    assert model.score(data) >= model.loss_hist[-1] - EPSILON, "W prob " + \
+                                str(model.score(data)) + " " + \
+                                str(model.loss_hist[-1])
 
     update_H(model.W, model.H, data)
 
-    assert model.score(data) >= model.loss_hist[-1], "H prob"
+    assert model.score(data) >= model.loss_hist[-1] - EPSILON, "H prob"
 
 
 def update_W(W, H, X):
@@ -29,7 +31,9 @@ def update_W(W, H, X):
 
     for k in range(K):
         for l in range(L):
-            ind = k*L + l
+            ind = l*K + k
+
+            assert np.array_equal(H_unfold[ind, :], pad_shift_cols(H, l)[k])
 
             # DEBUG
             r1 = la.norm(resid)
