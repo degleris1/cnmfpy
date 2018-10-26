@@ -9,7 +9,12 @@ EPSILON = np.finfo(np.float).eps
 
 def chals_step(data, model):
     update_W(model.W, model.H, data)
+
+    assert model.score(data) >= model.loss_hist[-1], "W prob"
+
     update_H(model.W, model.H, data)
+
+    assert model.score(data) >= model.loss_hist[-1], "H prob"
 
 
 def update_W(W, H, X):
@@ -22,22 +27,29 @@ def update_W(W, H, X):
     resid = X - tensor_conv(W, H)
     H_norms = la.norm(H_unfold, axis=1)
 
-    assert H_norms.shape != L*K
-
     for k in range(K):
         for l in range(L):
             ind = k*L + l
-            resid_adj = resid + np.outer(W[l, :, k], H_unfold[ind, :])
-            W[l, :, k] = new_W_col(H_unfold[ind, :], H_norms[ind], resid_adj)
-            resid = resid_adj - np.outer(W[l, :, k], H_unfold[ind, :])
+
+            # DEBUG
+            r1 = la.norm(resid)
+
+            resid += np.outer(W[l, :, k], H_unfold[ind, :])
+            W[l, :, k] = new_W_col(H_unfold[ind, :], H_norms[ind], resid)
+            resid -= np.outer(W[l, :, k], H_unfold[ind, :])
+
+            # DEBUG
+            r2 = la.norm(resid)
+            assert r2 <= r1
 
 
 def update_H(W, H, X):
     L, N, K = W.shape
     T = H.shape[1]
 
-    # Set up residual
-    W_norms = la.norm(W, axis=(0, 1))  # Compute norms of each component
+    # Set up residual and norms of each column
+    W_norms = la.norm(W, axis=1).T  # K * L, norm along N
+
     resid = X - tensor_conv(W, H)
 
     # Update each component
@@ -46,9 +58,18 @@ def update_H(W, H, X):
 
         # Update each timebin
         for t in range(T):
+            # DEBUG
+            r1 = la.norm(resid)
+
             resid_slice = resid[:, t:t+L] + H[k, t] * Wk[:, :T-t]
-            H[k, t] = new_H_entry(Wk[:, :T-t], W_norms[k], resid_slice)
+            norm_Wkt = np.sqrt(np.sum(W_norms[k, :T-t]**2))
+
+            H[k, t] = new_H_entry(Wk[:, :T-t], norm_Wkt, resid_slice)
             resid[:, t:t+L] = resid_slice - H[k, t] * Wk[:, :T-t]
+
+            # DEBUG
+            r2 = la.norm(resid)
+            assert r2 <= r1, "update H fails" + str(r2) + " " + str(r1)
 
 
 def new_W_col(Hkl, norm_Hkl, resid):
@@ -58,12 +79,12 @@ def new_W_col(Hkl, norm_Hkl, resid):
     return np.maximum(np.dot(resid, Hkl) / (norm_Hkl**2 + EPSILON), 0)
 
 
-def new_H_entry(Wk, norm_Wk, resid_slice):
+def new_H_entry(Wkt, norm_Wkt, resid_slice):
     """
     """
-    trace = np.dot(np.ravel(Wk), np.ravel(resid_slice))
+    trace = np.dot(np.ravel(Wkt), np.ravel(resid_slice))
 
-    return np.maximum(trace / (norm_Wk**2 + EPSILON), 0)
+    return np.maximum(trace / (norm_Wkt**2 + EPSILON), 0)
 
 
 """
