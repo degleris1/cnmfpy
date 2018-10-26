@@ -21,7 +21,7 @@ all_algorithms = [
 model_options = {
     "n_components": 5,
     "maxlag": 10,
-    "tol": 1e-3,
+    "tol": 0,
     # "max_time": 20.0,  # TODO -- make this an option.
 }
 plot_options = {
@@ -47,7 +47,9 @@ for data, ax in zip(all_datasets, axes):
         model.fit(data.generate())
 
         # Plot learning curve.
-        ax.plot(model.time_hist, model.loss_hist,
+        # ax.plot(model.time_hist, model.loss_hist,
+        #         color=color, label=method, **plot_options)
+        ax.plot(model.loss_hist,
                 color=color, label=method, **plot_options)
         ax.set_title(data.name)
         ax.set_ylim(0, 1)
@@ -55,7 +57,7 @@ for data, ax in zip(all_datasets, axes):
 # Format subplots
 axes[0].set_ylabel("loss")
 for ax in axes:
-    ax.set_xlabel("time (s)")
+    ax.set_xlabel("iterations")
 axes[-1].legend()
 fig.tight_layout()
 # fig.savefig("01_alg_comparison.pdf")
