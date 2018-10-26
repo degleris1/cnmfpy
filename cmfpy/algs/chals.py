@@ -9,14 +9,7 @@ EPSILON = np.finfo(np.float).eps
 
 def chals_step(data, model):
     update_W(model.W, model.H, data)
-
-    assert model.score(data) >= model.loss_hist[-1] - EPSILON, "W prob " + \
-                                str(model.score(data)) + " " + \
-                                str(model.loss_hist[-1])
-
     update_H(model.W, model.H, data)
-
-    assert model.score(data) >= model.loss_hist[-1] - EPSILON, "H prob"
 
 
 def update_W(W, H, X):
@@ -33,18 +26,9 @@ def update_W(W, H, X):
         for l in range(L):
             ind = l*K + k
 
-            assert np.array_equal(H_unfold[ind, :], pad_shift_cols(H, l)[k])
-
-            # DEBUG
-            r1 = la.norm(resid)
-
             resid += np.outer(W[l, :, k], H_unfold[ind, :])
             W[l, :, k] = new_W_col(H_unfold[ind, :], H_norms[ind], resid)
             resid -= np.outer(W[l, :, k], H_unfold[ind, :])
-
-            # DEBUG
-            r2 = la.norm(resid)
-            assert r2 <= r1
 
 
 def update_H(W, H, X):
@@ -62,18 +46,11 @@ def update_H(W, H, X):
 
         # Update each timebin
         for t in range(T):
-            # DEBUG
-            r1 = la.norm(resid)
-
             resid_slice = resid[:, t:t+L] + H[k, t] * Wk[:, :T-t]
             norm_Wkt = np.sqrt(np.sum(W_norms[k, :T-t]**2))
 
             H[k, t] = new_H_entry(Wk[:, :T-t], norm_Wkt, resid_slice)
             resid[:, t:t+L] = resid_slice - H[k, t] * Wk[:, :T-t]
-
-            # DEBUG
-            r2 = la.norm(resid)
-            assert r2 <= r1, "update H fails" + str(r2) + " " + str(r1)
 
 
 def new_W_col(Hkl, norm_Hkl, resid):
