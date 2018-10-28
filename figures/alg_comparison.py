@@ -13,8 +13,9 @@ all_datasets = [
 ]
 
 all_algorithms = [
-    "mult",
-    "bcd",
+    # "mult",
+    # "bcd",
+    "gd",
 ]
 
 # Tunable parameters shared by all datasets/algorithms.
@@ -33,7 +34,7 @@ plot_options = {
 colors = palettable.tableau.BlueRed_6.mpl_colors
 
 # Create one subplot for each dataset.
-fig, axes = plt.subplots(1, len(all_datasets))
+fig, axes = plt.subplots(1, len(all_datasets), sharey=True)
 axes = np.atleast_1d(axes)
 
 # Iterate over datasets.
@@ -43,7 +44,7 @@ for data, ax in zip(all_datasets, axes):
     for method, color in zip(all_algorithms, colors):
 
         # Create model.
-        model = CMF(method=method, **model_options)
+        model = CMF(alg_name=method, **model_options)
         model.fit(data.generate())
 
         # Plot learning curve.
@@ -52,7 +53,6 @@ for data, ax in zip(all_datasets, axes):
         ax.plot(model.loss_hist,
                 color=color, label=method, **plot_options)
         ax.set_title(data.name)
-        ax.set_ylim(0, 1)
 
 # Format subplots
 axes[0].set_ylabel("loss")

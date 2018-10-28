@@ -37,18 +37,19 @@ def test_gradients(algclass, L, K):
     alg = algclass(DATA, W.copy(), H.copy())
 
     # Computed gradients.
-    gW = alg.gW.copy()
-    gH = alg.gH.copy()
+    gW = alg.gW
+    gH = alg.gH
 
-    # Do a gradient check by finite differencing.
+    # Do a gradient check by finite differencing. Create wrapper functions
+    # for computing loss through algorithm class interface.
     def loss_W(w_vec):
         _W = w_vec.reshape((L, N, K))
-        _alg = algclass(DATA, _W, H.copy())
+        _alg = algclass(DATA, _W, H)
         return _alg.unnormalized_loss
 
     def loss_H(h_vec):
         _H = h_vec.reshape((K, T))
-        _alg = algclass(DATA, W.copy(), _H)
+        _alg = algclass(DATA, W, _H)
         return _alg.unnormalized_loss
 
     # Compute approximate gradients.

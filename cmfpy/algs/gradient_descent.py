@@ -23,8 +23,9 @@ class GradDescent(AbstractOptimizer):
         # Invoke super class initialization procedures.
         super().__init__(data, initW, initH)
 
-        # TODO: Figure out whether this is a reasonable guess.
-        self.step_size = 1 / la.norm(data)
+        # TODO: results seem sensitive to step size so let's see if we
+        # can get a rough lipshitz constant working....
+        self.step_size = 1e-2
 
         # Hyperparameters.
         self.tol = tol
@@ -64,14 +65,14 @@ class GradDescent(AbstractOptimizer):
         """Update parameters."""
 
         # Update parameters.
-        _projected_step(self.W, -self.step_size * self.gW)
-        _projected_step(self.H, -self.step_size * self.gH)
+        _projected_step(self.W, self.gW, self.step_size)
+        _projected_step(self.H, self.gH, self.step_size)
 
         # Update residuals and gradients and return loss
         self.cache_resids()
         self.cache_gW()
         self.cache_gH()
-        return self.loss()
+        return self.loss
 
     def converged(self, loss_hist):
         """Check if converged, decrease step size if needed."""
@@ -112,12 +113,12 @@ class BlockDescent(GradDescent):
         """Overrides gradient update rule. Same idea, but different order."""
 
         # Update W (gradient should be up-to-date)
-        _projected_step(self.W, -self.step_size * self.gW)
+        _projected_step(self.W, self.gW, self.step_size)
 
         # Update H (need to recompute residuals since W was updated).
         self.cache_resids()
         self.cache_gH()
-        _projected_step(self.H, -self.step_size * self.gH)
+        _projected_step(self.H, self.gH, self.step_size)
 
         # Update residuals and gradient computation for W (for next iteration).
         self.cache_resids()
@@ -127,12 +128,15 @@ class BlockDescent(GradDescent):
         return self.loss
 
 
-# TODO: parallel loop here may be overkill
-@numba.jit(nopython=True, parallel=True)
-def _projected_step(X, dX):
+def _projected_step(X, dX, ss):
+    """Thin wrapper, vectorizes parameters for easy update."""
+    return _raveled_step(X.ravel(), dX.ravel(), ss)
+
+
+@numba.jit(nopython=True)
+def _raveled_step(x, dx, ss):
     """
-    Adds dX to X and projects onto nonegative orthant. Modifies X in-place.
+    Adds dx to x and projects onto nonegative orthant. Modifies x in-place.
     """
-    x, dx = X.ravel(), dX.ravel()
-    for i in numba.prange(len(x)):
-        x[i] = np.maximum(x[i] + dx[i], 0.0)
+    for i in range(len(x)):
+        x[i] = np.maximum(x[i] - ss * dx[i], 0.0)

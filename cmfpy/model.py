@@ -7,7 +7,10 @@ import numpy as np
 import numpy.random as npr
 import numpy.linalg as la
 
-from . import algs
+import time
+from tqdm import trange
+
+from .algs import ALGORITHMS
 from . import initialize
 
 from .common import cmf_predict
@@ -90,19 +93,21 @@ class CMF(object):
         # Initialize W and H.
         n_features, n_time = data.shape
 
-        W = npr.rand(self.maxlag, n_features, self.n_components)
-        H = npr.rand(self.n_components, n_time)
+        self._W = npr.rand(self.maxlag, n_features, self.n_components)
+        self._H = npr.rand(self.n_components, n_time)
 
-        alpha = (data * self.predict()).sum() / la.norm(est)**2
+        est = self.predict()
+        alpha = (data * est).sum() / la.norm(est)**2
 
         # Create algorithm helper class.
         alg_class = ALGORITHMS[self.alg_name]
-        algorithm = alg_class(data, W, H, **self.alg_opts)
+        algorithm = alg_class(
+            data, alpha * self._W, alpha * self._H, **self.alg_opts)
 
         # Set up optimization tracking.
-        self.loss_hist = [self.score(data)]
+        self.loss_hist = [algorithm.loss]
         self.time_hist = [0.0]
-        if verbose:
+        if self.verbose:
             iterations = trange(self.n_iter_max)
         else:
             iterations = range(self.n_iter_max)
@@ -114,7 +119,7 @@ class CMF(object):
             t0 = time.time()
 
             # Update model parameters.
-            loss = alg.update()
+            loss = algorithm.update()
 
             # Record time of parameter update.
             dur = time.time() - t0
@@ -122,12 +127,12 @@ class CMF(object):
             self.loss_hist.append(loss)
 
             # Check convergence.
-            if algorithm.converged():
+            if algorithm.converged(self.loss_hist):
                 break
 
         # Extract model parameters from algorithm class.
-        self._W = alg.W
-        self._H = alg.H
+        self._W = algorithm.W
+        self._H = algorithm.H
 
     def sort_components(self):
         """
