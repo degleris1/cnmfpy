@@ -1,21 +1,32 @@
-import numpy as np  # Linear algebra
+"""
+Initialization procedures for CMF.
+"""
 
-from .conv import tensor_conv
+import numpy as np
+import numpy.random as npr
+from .common import cmf_predict
 
 
-def init_rand(model, data):
+def init_rand(model, data, random_state=None, rescale=True):
     """
-    Random initialization with appropriate scaling
+    Random initialization with appropriate scaling.
     """
 
-    n_neurons, n_time = data.shape
+    if isinstance(random_state, npr.RandomState):
+        rs = random_state
+    else:
+        rs = np.RandomState(random_state)
 
-    W = np.abs(np.random.rand(model.maxlag, n_neurons, model.n_components))
-    H = np.abs(np.random.rand(model.n_components, n_time))
+    n_features, n_time = data.shape
 
-    est = tensor_conv(W, H)
+    W = rs.rand(model.maxlag, n_features, model.n_components)
+    H = rs.rand(model.n_components, n_time)
 
-    # TODO: epsilon necessary?
-    alpha = np.dot(data.ravel(), est.ravel()) / np.linalg.norm(est)**2
+    if rescale:
+        # TODO add brief note/reference here.
+        est = cmf_predict(W, H)
+        alpha = np.dot(data.ravel(), est.ravel()) / np.linalg.norm(est)**2
+        W *= alpha
+        H *= alpha
 
-    return alpha * W, alpha * H
+    return W, H

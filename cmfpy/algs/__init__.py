@@ -1,6 +1,11 @@
 """Optimization methods for convolutive matrix factorization."""
 
-# from .bcd import fit_bcd
+from .gradient_descent import GradDescent, BlockDescent
+
 # from .mult import fit_mult, mult_step
 # from .chals import fit_chals
-from .frame import fit_alg, ALGORITHMS
+
+ALGORITHMS = {
+    "gd": GradDescent,
+    "bcd": BlockDescent,
+}

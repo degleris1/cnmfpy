@@ -1,8 +1,13 @@
-from .model import CMF
+"""
+Convolutive Matrix Factorization (CMF) fitting code.
 
-from . import conv
-from . import optimize
-from . import regularize
-from . import utils
+Developed by
+------------
+Anthony Degleris
+Ben Antin
+Alex Williams
+"""
+
+from .model import CMF
 
 __version__ = '0.0.1'
