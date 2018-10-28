@@ -12,6 +12,11 @@ from . import initialize
 
 from .common import cmf_predict
 
+NOT_FITTED_ERROR = ValueError(
+    "This CMF instance is not fitted yet. Call 'fit' with appropriate"
+    "arguments before using this method."
+)
+
 
 class CMF(object):
     """
@@ -21,9 +26,9 @@ class CMF(object):
     matrix `H`.
     """
 
-    def __init__(self, n_components, maxlag, tol=1e-5, n_iter_max=100,
-                 l2_scfo=0, l1_W=0.0, l1_H=0.0, verbose=True,
-                 method='mult'):
+    def __init__(self, n_components, maxlag, n_iter_max=100,
+                 l1_W=0.0, l1_H=0.0, verbose=True, alg_name='mult',
+                 **alg_opts):
         """
         Parameters
         ----------
@@ -44,28 +49,23 @@ class CMF(object):
             Weight of the L1 regularizer for the entries of `W`.
         l1_H : float, optional
             Weight of the L1 regularizer for the entries of `H`.
-
-        References
-        ----------
-        See Mackevicius, Bahle, et al., *Unsupervised discovery of temporal
-        sequences in high-dimensional datasets, with applications to
-        neuroscience.*
+        alg_name : str
+            String specifying algorithm.
+        **alg_opts : dict
+            Additional keyword arguments are passed as algorithm-specific
+            options when, such as learning rate and convergence tolerance.
+            See algorithm classes for details.
         """
         self.n_components = n_components
         self.maxlag = maxlag
 
-        self.W = None
-        self.H = None
-
-        self.tol = tol
         self.n_iter_max = n_iter_max
 
-        self.l2_scfo = l2_scfo
         self.l1_W = l1_W
         self.l1_H = l1_H
 
-        self.loss_hist = None
-        self.method = method
+        self.alg_name = alg_name
+        self.alg_opts = alg_opts
         self.verbose = verbose
 
     def fit(self, data):
@@ -90,64 +90,68 @@ class CMF(object):
         # Initialize W and H.
         n_features, n_time = data.shape
 
-        self.W = np.abs(npr.rand(self.maxlag, n_features, self.n_components))
-        self.H = np.abs(npr.rand(self.n_components, n_time))
+        W = npr.rand(self.maxlag, n_features, self.n_components)
+        H = npr.rand(self.n_components, n_time)
 
         alpha = (data * self.predict()).sum() / la.norm(est)**2
 
-        self.W = alpha * W
-        self.H = alpha * H
+        # Create algorithm helper class.
+        alg_class = ALGORITHMS[self.alg_name]
+        algorithm = alg_class(data, W, H, **self.alg_opts)
 
         # Set up optimization tracking.
-        model.loss_hist = [model.score(data)]
-        model.time_hist = [0.0]
-        iterations = trange(self.n_iter_max) if verbose else range(self.n_iter_max)
+        self.loss_hist = [self.score(data)]
+        self.time_hist = [0.0]
+        if verbose:
+            iterations = trange(self.n_iter_max)
+        else:
+            iterations = range(self.n_iter_max)
 
-        # Initialize algorithm class.
-        algorithm = ALGORITHMS[self.method](self, data)
-
+        # Run optimization.
         for itr in iterations:
 
             # Time each parameter update.
             t0 = time.time()
 
             # Update model parameters.
-            self.W, self.H = alg.update()
+            loss = alg.update()
 
             # Record time of parameter update.
             dur = time.time() - t0
             self.time_hist.append(self.time_hist[-1] + dur)
-            self.loss_hist.append(self.score(data))
-
-            # Renormalize factors to prevent singularities.
-            model.W, model.H = renormalize(model.W, model.H)
+            self.loss_hist.append(loss)
 
             # Check convergence.
-            if alg.converged(model.loss_hist):
+            if algorithm.converged():
                 break
 
+        # Extract model parameters from algorithm class.
+        self._W = alg.W
+        self._H = alg.H
+
+    def sort_components(self):
+        """
+        Sorts model components by explanatory power.
+        """
+
         # Compute explanatory power of each factor.
-        loadings = compute_loadings(data, self.W, self.H)
+        loadings = compute_loadings(data, self.motifs, self.factors)
 
-        # Sort factors by power
+        # Sort components by power
         ind = np.argsort(loadings)
-        self.W = self.W[:, :, ind]
-        self.H = self.H[ind, :]
-
-        return self
+        self._W = self._W[:, :, ind]  # motifs
+        self._H = self._H[ind, :]     # factors
 
     def predict(self):
         """
-        Return low-rank reconstruction of data.
+        Computes low-rank reconstruction of data.
 
         Returns
         -------
         est : array-like, shape (n_time, n_features)
-            Reconstruction of the data using `W` and `H`.
+            Model estimate of the data.
         """
-        # check that W and H are fit
-        self._check_is_fitted()
-        return cmf_predict(self.W, self.H)
+        return cmf_predict(self.motifs, self.factors)
 
     def score(self, data):
         """
@@ -168,17 +172,23 @@ class CMF(object):
         TODO: demean the data
         """
         error = self.predict() - data
-
         return 1 - (la.norm(error)**2 / la.norm(data)**2)
 
-    def _check_is_fitted(self):
-        """
-        Check if `W`, `H` have been fitted.
-        """
-        if self.W is None or self.H is None:
-            raise ValueError('This ConvNMF instance is not fitted yet.'
-                             'Call \'fit\' with appropriate arguments '
-                             'before using this method.')
+    @property
+    def motifs(self):
+        """Returns `W` (lags x features x components) parameters."""
+        try:
+            return self._W
+        except AttributeError:
+            raise NOT_FITTED_ERROR
+
+    @property
+    def factors(self):
+        """Returns `H` (components x timebins) parameters."""
+        try:
+            return self._H
+        except AttributeError:
+            raise NOT_FITTED_ERROR
 
 
 def compute_loadings(data, W, H):

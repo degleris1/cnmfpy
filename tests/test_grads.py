@@ -6,53 +6,55 @@ from numpy.testing import assert_allclose
 
 from cmfpy import CMF
 from cmfpy.initialize import init_rand
-from cmfpy.common import grad_W, grad_H, cmf_loss
+from cmfpy.algs.gradient_descent import GradDescent, BlockDescent
 from cmfpy.datasets import Synthetic
 
 from scipy.optimize import approx_fprime
 
 # Test parameters and tolerances.
-TOL = 1e-5
-EPS = 100 * np.sqrt(np.finfo(float).eps)
+TOL = 1e-4
+EPS = 1e-7
 SEED = 1234
+N, T = 10, 200
 DATA = Synthetic(
-    n_features=10,
-    n_timebins=200,
+    n_features=N,
+    n_timebins=T,
     sparsity=.2,
 ).generate()
 
 
+@pytest.mark.parametrize("algclass", [GradDescent, BlockDescent])
 @pytest.mark.parametrize("L", [5, 10])
 @pytest.mark.parametrize("K", [1, 5])
-def test_gradients(L, K):
+def test_gradients(algclass, L, K):
 
-    # Initialize model parameters.
+    # Initialize parameters.
     rs = np.random.RandomState(SEED)
-    model = CMF(n_components=K, maxlag=L)
-    W, H = init_rand(model, DATA, random_state=rs)
+    W = rs.rand(L, N, K)
+    H = rs.rand(K, T)
 
-    # Thin wrapper around loss functions for gradient checking.
+    # Initialize algorithm.
+    alg = algclass(DATA, W.copy(), H.copy())
+
+    # Computed gradients.
+    gW = alg.gW.copy()
+    gH = alg.gH.copy()
+
+    # Do a gradient check by finite differencing.
     def loss_W(w_vec):
-        w = w_vec.reshape(W.shape)
-        return cmf_loss(DATA, w, H)
+        _W = w_vec.reshape((L, N, K))
+        _alg = algclass(DATA, _W, H.copy())
+        return _alg.unnormalized_loss
 
     def loss_H(h_vec):
-        h = h_vec.reshape(H.shape)
-        return cmf_loss(DATA, W, h)
+        _H = h_vec.reshape((K, T))
+        _alg = algclass(DATA, W.copy(), _H)
+        return _alg.unnormalized_loss
 
-    # # Compute approximate gradients.
-    # approx_gW = approx_fprime(W.ravel(), loss_W, EPS)
-    # approx_gH = approx_fprime(H.ravel(), loss_H, EPS)
-
-    # Compute gradients using internal code.
-    gW = np.zeros_like(W)
-    grad_W(DATA, H, gW)
-
-    gH = np.zeros_like(H)
-    grad_H(DATA, W, gH)
-
-    assert True
+    # Compute approximate gradients.
+    approx_gW = approx_fprime(W.ravel(), loss_W, EPS)
+    approx_gH = approx_fprime(H.ravel(), loss_H, EPS)
 
     # Check for agreement.
-    # assert_allclose(approx_gW, gW.ravel(), rtol=TOL)
-    # assert_allclose(approx_gH, gH.ravel(), rtol=TOL)
+    assert_allclose(approx_gW, gW.ravel(), rtol=TOL)
+    assert_allclose(approx_gH, gH.ravel(), rtol=TOL)
