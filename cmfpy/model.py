@@ -11,7 +11,6 @@ from . import initialize
 
 from .conv import tensor_conv
 from .optimize import compute_loadings
-from .regularize import compute_smooth_kernel
 
 
 class CMF(object):
@@ -62,7 +61,6 @@ class CMF(object):
         self.l1_W = l1_W
         self.l1_H = l1_H
 
-        self._kernel = compute_smooth_kernel(maxlag)
         self.loss_hist = None
         self.method = method
 

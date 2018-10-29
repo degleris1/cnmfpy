@@ -4,24 +4,23 @@ from tqdm import trange
 
 from ..optimize import renormalize
 
-from .mult import mult_step
-from .chals import chals_step
-from .bcd import bcd_step
-from ..conv import tensor_conv
+from .mult import MultUpdate
+from .chals import CHALSUpdate, FastCHALSUpdate
 
 
-ALGORITHMS = {'mult': mult_step,
-              'chals': chals_step,
-              'bcd': bcd_step}
+ALGORITHMS = {'mult': MultUpdate,
+              'chals': FastCHALSUpdate}
 
 
-def fit_alg(data, model, update_rule):
+def fit_alg(data, model, UpdateRule):
     m, n = data.shape
 
     # Initial loss
     model.loss_hist = [model.score(data)]
     model.time_hist = [0.0]
     t0 = time.time()
+
+    update_rule = UpdateRule(data, model)
 
     itr = 0
     for itr in trange(model.n_iter_max):
@@ -32,7 +31,7 @@ def fit_alg(data, model, update_rule):
         if (np.isnan(model.H).any()):
             raise Exception('H has NANs!!')
 
-        update_rule(data, model)
+        update_rule.step()
 
         model.loss_hist.append(model.score(data))
         model.time_hist.append(time.time() - t0)

@@ -1,119 +1,171 @@
 import numpy as np  # Linear algebra
 import numpy.linalg as la
 
-from ..conv import tensor_conv, shift_and_stack, hunfold, pad_shift_cols
+from ..conv import tensor_conv, shift_and_stack
 
 # TODO make EPSILON universal
 EPSILON = np.finfo(np.float).eps
 
 
-def chals_step(data, model):
-    update_W(model.W, model.H, data)
-    update_H(model.W, model.H, data)
-
-
-def update_W(W, H, X):
-    L, N, K = W.shape
-
-    # Unfold matrices
-    H_unfold = shift_and_stack(H, L)
-
-    # Set up residual and norms
-    resid = X - tensor_conv(W, H)
-    H_norms = la.norm(H_unfold, axis=1)
-
-    for k in range(K):
-        for l in range(L):
-            ind = l*K + k
-
-            resid += np.outer(W[l, :, k], H_unfold[ind, :])
-            W[l, :, k] = new_W_col(H_unfold[ind, :], H_norms[ind], resid)
-            resid -= np.outer(W[l, :, k], H_unfold[ind, :])
-
-
-def update_H(W, H, X):
-    L, N, K = W.shape
-    T = H.shape[1]
-
-    # Set up residual and norms of each column
-    W_norms = la.norm(W, axis=1).T  # K * L, norm along N
-
-    resid = X - tensor_conv(W, H)
-
-    # Update each component
-    for k in range(K):
-        Wk = W[:, :, k].T  # TODO: will this slow things down?
-
-        # Update each timebin
-        for t in range(T):
-            resid_slice = resid[:, t:t+L] + H[k, t] * Wk[:, :T-t]
-            norm_Wkt = np.sqrt(np.sum(W_norms[k, :T-t]**2))
-
-            H[k, t] = new_H_entry(Wk[:, :T-t], norm_Wkt, resid_slice)
-            resid[:, t:t+L] = resid_slice - H[k, t] * Wk[:, :T-t]
-
-
-def new_W_col(Hkl, norm_Hkl, resid):
+class CHALSUpdate():
     """
     """
-    # TODO reconsider transpose
-    return np.maximum(np.dot(resid, Hkl) / (norm_Hkl**2 + EPSILON), 0)
 
+    def __init__(self, data, model):
+        self.data = data
+        self.model = model
 
-def new_H_entry(Wkt, norm_Wkt, resid_slice):
-    """
-    """
-    trace = np.dot(np.ravel(Wkt), np.ravel(resid_slice))
+        self.resid = data - tensor_conv(model.W, model.H)
 
-    return np.maximum(trace / (norm_Wkt**2 + EPSILON), 0)
+    def step(self):
+        self.update_W()
+        self.update_H()
+
+    def update_W(self):
+        model = self.model
+
+        L, N, K = model.W.shape
+
+        # Set up unfolded matrix and norms
+        H_unfold = shift_and_stack(model.H, L)
+        H_norms = la.norm(H_unfold, axis=1)
+
+        for k in range(K):
+            for l in range(L):
+                ind = l*K + k
+
+                self.resid += np.outer(model.W[l, :, k], H_unfold[ind, :])
+
+                model.W[l, :, k] = self.new_W_col(H_unfold[ind, :],
+                                                  H_norms[ind],
+                                                  self.resid)
+
+                self.resid -= np.outer(model.W[l, :, k], H_unfold[ind, :])
+
+    def update_H(self):
+        model = self.model
+
+        L, N, K = model.W.shape
+        T = model.H.shape[1]
+
+        # Set up norms of each column
+        W_norms = la.norm(model.W, axis=1).T  # K * L, norm along N
+
+        # Update each component
+        for k in range(K):
+            Wk = model.W[:, :, k].T  # TODO: will this slow things down?
+
+            # Update each timebin
+            for t in range(T):
+                resid_slice = (self.resid[:, t:t+L] +
+                               model.H[k, t] * Wk[:, :T-t])
+
+                norm_Wkt = np.sqrt(np.sum(W_norms[k, :T-t]**2))
+
+                model.H[k, t] = self.new_H_entry(Wk[:, :T-t],
+                                                 norm_Wkt,
+                                                 resid_slice)
+
+                self.resid[:, t:t+L] = (resid_slice -
+                                        model.H[k, t] * Wk[:, :T-t])
+
+    def new_W_col(self, Hkl, norm_Hkl, resid):
+        """
+        """
+        # TODO reconsider transpose
+        return np.maximum(np.dot(resid, Hkl) / (norm_Hkl**2 + EPSILON), 0)
+
+    def new_H_entry(self, Wkt, norm_Wkt, resid_slice):
+        """
+        """
+        trace = np.dot(np.ravel(Wkt), np.ravel(resid_slice))
+
+        return np.maximum(trace / (norm_Wkt**2 + EPSILON), 0)
 
 
 """
-DEPRECATED FUNCTIONS BELOW
 """
 
 
-def update_H_component(W, H, X, k):
+class FastCHALSUpdate(CHALSUpdate):
     """
     """
-    L, N, K = W.shape
-    T = H.shape[1]
 
-    # Set up Wk and residual
-    Wk = W[:, :, k].T  # TODO: will this slow things down?
-    norm_Wk = la.norm(Wk)
-    resid = X - tensor_conv(W, H)
+    def __init__(self, data, model):
+        super().__init__(data, model)
 
-    # Update each entry in the row, from left to right
-    for t in range(T):
-        resid_slice = resid[:, t:t+L] + H[k, t] * Wk[:, :T-t]
-        H[k, t] = new_H_entry(Wk[:, :T-t], norm_Wk, resid_slice)
-        resid[:, t:t+L] = resid_slice - H[k, t] * Wk[:, :T-t]
+    def gen_resids_tens(self, resid, L, n_lay, N):
+        T_crop = L * n_lay
 
+        return resid[:, :T_crop].T.reshape(n_lay, L*N)
 
-def update_W_component(W, H, X, k):
-    """
-    """
-    L, N, K = W.shape
+    def gen_factors_tens(self, Wk, entries):
+        return np.outer(entries, Wk)
 
-    W_unfold = hunfold(W)
-    H_unfold = shift_and_stack(H, L)
+    def expand_factors_tens(self, factors_tens, n_lay, L, N):
+        return factors_tens.reshape(L*n_lay, N).T
 
-    for l in range(L):
-        ind = k*L + l
-        W[l, :, k] = W_col_update(W_unfold, H_unfold, X, ind)
+    def clone_Wk(self, Wk, n_lay):
+        return np.outer(np.ones(n_lay), Wk)
 
+    def update_H(self):
+        model = self.model
 
-def W_col_update(W_unfold, H_unfold, X, ind):
-    """
-    Updates `W[l, :, k]` using the HALS update rule
-    """
+        L, N, K = model.W.shape
+        T = model.H.shape[1]
 
-    W_col = np.dot(X, H_unfold[ind, :].T)
-    for j in range(W_unfold.shape[1]):
-        if (j != ind):
-            W_col -= W_unfold[:, j] * np.dot(H_unfold[j, :], H_unfold[ind, :])
+        # Set up norms of each column
+        # W_norms = la.norm(model.W, axis=1).T  # K * L, norm along N
 
-    W_col /= (la.norm(H_unfold[ind, :])**2 + EPSILON)
+        # Update each component
+        for k in range(K):
+            Wk = model.W[:, :, k].ravel()
+            norm_Wk = la.norm(Wk)
+            # TODO update the last few entries in H
 
-    return np.maximum(0, W_col)
+            # Update each lag
+            for l in range(L):
+                entries = model.H[k, l:T-L:L]
+                n_lay = len(entries)
+
+                # Create residual and factor tensors
+                resid_tens = self.gen_resids_tens(self.resid, L, n_lay, N)
+                factors_tens = self.gen_factors_tens(Wk, entries)
+                # DEBUG
+                assert resid_tens.shape == factors_tens.shape
+
+                # Generate remainder
+                remainder = resid_tens + factors_tens
+
+                # Remove factor contribution to residual
+                self.resid[:, l:l+n_lay*L] += self.expand_factors_tens(
+                    factors_tens, n_lay, L, N)
+
+                # Clone Wk several times
+                Wk_clones = self.clone_Wk(Wk, n_lay)
+                assert Wk_clones.shape == remainder.shape
+
+                # Update H
+                model.H[k, l:T-L:L] = self.new_H_entry(Wk_clones,
+                                                       norm_Wk,
+                                                       remainder)
+
+                # Add factor contribution back to residual
+                new_entries = model.H[k, l:T-L:L]
+                new_factors_tens = self.gen_factors_tens(Wk, new_entries)
+                self.resid[:, l:l+n_lay*L] -= self.expand_factors_tens(
+                    new_factors_tens, n_lay, L, N)
+
+                # TODO clean
+                # TODO update last entries
+
+    def update_Hkl(self):
+        pass
+
+    def new_H_entry(self, Wk_clones, norm_Wk, remainder):
+        """
+        """
+        traces = np.inner(Wk_clones, remainder)[0]
+        return np.maximum(traces / (norm_Wk**2 + EPSILON), 0)
+        # trace = np.dot(np.ravel(Wkt), np.ravel(resid_slice))
+        # return np.maximum(trace / (norm_Wkt**2 + EPSILON), 0)

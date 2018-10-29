@@ -3,7 +3,6 @@ from cmfpy import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import palettable
-import itertools
 
 
 # List of all dataset objects.
@@ -14,7 +13,7 @@ all_datasets = [
 
 all_algorithms = [
     "mult",
-    "bcd",
+    "chals",
 ]
 
 # Tunable parameters shared by all datasets/algorithms.
