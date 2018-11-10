@@ -1,3 +1,5 @@
+import itertools
+
 import numba
 
 import numpy as np
@@ -6,6 +8,8 @@ from numbers import Integral
 
 from ..common import cmf_predict, s_dot, s_T_dot
 from .base import AbstractOptimizer
+
+from scipy.linalg import eigh
 
 
 class GradDescent(AbstractOptimizer):
@@ -25,7 +29,7 @@ class GradDescent(AbstractOptimizer):
 
         # TODO: results seem sensitive to step size so let's see if we
         # can get a rough lipshitz constant working....
-        self.step_size = 1e-2
+        self.step_size = 1e-4
 
         # Hyperparameters.
         self.tol = tol
@@ -61,11 +65,39 @@ class GradDescent(AbstractOptimizer):
             self.gH += s_dot(Wl.T, self.resids, -lag)
         return self.gH
 
+    def lipschitz_W(self):
+        L, K = self.W.shape[0], self.W.shape[-1]
+        first_row = [s_T_dot(self.H, self.H, l) for l in range(L)]
+
+        hW = np.empty((K * L, K * L))
+        for i, j in itertools.product(range(L), range(L)):
+            i0 = i * K
+            i1 = (i * K) + K
+            j0 = j * K
+            j1 = (j * K) + K
+            if i <= j:
+                hW[i0:i1, j0:j1] = first_row[j - i]
+            else:
+                hW[i0:i1, j0:j1] = first_row[i - j].T
+
+        return eigh(hW, eigvals=(K * L - 1, K * L - 1), eigvals_only=True)[0]
+
+    def lipschitz_H(self):
+        max_eigval = -1.0  # all eigvals will be positive.
+
+        L, K = self.W.shape[0], self.W.shape[-1]
+        block = np.empty((K, K))
+        for k in range(K):
+            for l in range(L):
+                self.W[l, k]
+
+        return eigh(hW, eigvals=(K * L - 1, K * L - 1), eigvals_only=True)[0]
+
     def update(self):
         """Update parameters."""
 
         # Update parameters.
-        _projected_step(self.W, self.gW, self.step_size)
+        _projected_step(self.W, self.gW, 1.0 / self.lipschitz_W())
         _projected_step(self.H, self.gH, self.step_size)
 
         # Update residuals and gradients and return loss
@@ -113,7 +145,7 @@ class BlockDescent(GradDescent):
         """Overrides gradient update rule. Same idea, but different order."""
 
         # Update W (gradient should be up-to-date)
-        _projected_step(self.W, self.gW, self.step_size)
+        _projected_step(self.W, self.gW, 1.0 / self.lipschitz_W())
 
         # Update H (need to recompute residuals since W was updated).
         self.cache_resids()

@@ -11,7 +11,7 @@ class AbstractOptimizer:
         self.W = initW
         self.H = initH
 
-    def update(self, data):
+    def update(self):
         raise NotImplementedError("Base class must override update(...)")
 
     def converged(self, loss_hist):
