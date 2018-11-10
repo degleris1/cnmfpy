@@ -17,15 +17,15 @@ class GradDescent(AbstractOptimizer):
     Gradient Descent update rules for CMF.
     """
 
-    def __init__(self, data, initW, initH, tol=1e-5, patience=3,
-                 step_decrement=5.):
+    def __init__(self, data, dims, tol=1e-5, patience=3,
+                 step_decrement=5., **kwargs):
 
         # Check inputs,
         if patience < 1 or not isinstance(patience, Integral):
             raise ValueError("Patience must be a positive integer.")
 
         # Invoke super class initialization procedures.
-        super().__init__(data, initW, initH)
+        super().__init__(data, dims, **kwargs)
 
         # TODO: results seem sensitive to step size so let's see if we
         # can get a rough lipshitz constant working....
@@ -36,9 +36,13 @@ class GradDescent(AbstractOptimizer):
         self.patience = patience
         self.step_decrement = step_decrement
 
+        # Initialize W and H randomly.
+        if (self.W is None) or (self.H is None):
+            self.W, self.H = self.rand_init()
+
         # Preallocate space for gradients.
-        self.gW = np.empty_like(self.W)
-        self.gH = np.empty_like(self.H)
+        self.gW = np.empty((self.maxlag, self.n_features, self.n_components))
+        self.gH = np.empty((self.n_components, self.n_timepoints))
 
         # Cache useful intermediate results. Norm of data matrix,
         # residuals, and gradients.
@@ -83,15 +87,14 @@ class GradDescent(AbstractOptimizer):
         return eigh(hW, eigvals=(K * L - 1, K * L - 1), eigvals_only=True)[0]
 
     def lipschitz_H(self):
-        max_eigval = -1.0  # all eigvals will be positive.
-
-        L, K = self.W.shape[0], self.W.shape[-1]
-        block = np.empty((K, K))
-        for k in range(K):
-            for l in range(L):
-                self.W[l, k]
-
-        return eigh(hW, eigvals=(K * L - 1, K * L - 1), eigvals_only=True)[0]
+        raise NotImplementedError()
+        # max_eigval = -1.0  # all eigvals will be positive.
+        # L, K = self.W.shape[0], self.W.shape[-1]
+        # block = np.empty((K, K))
+        # for k in range(K):
+        #     for l in range(L):
+        #         self.W[l, k]
+        # return eigh(hW, eigvals=(K * L - 1, K * L - 1), eigvals_only=True)[0]
 
     def update(self):
         """Update parameters."""

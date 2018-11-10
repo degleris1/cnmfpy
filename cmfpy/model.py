@@ -21,6 +21,54 @@ NOT_FITTED_ERROR = ValueError(
 )
 
 
+class ModelDimensions:
+    """Holds dimensions of CMF model."""
+
+    def __init__(self, data=None, n_features=None, n_timepoints=None,
+                 maxlag=None, n_components=None):
+        """
+        Parameters
+        ----------
+            data : ndarray
+                Matrix holding time series, shape: (n_features, n_timepoints).
+                If not specified, must provide both `n_features` and
+                `n_timepoints`.
+            n_features : int
+                Number of features/measurements recorded in time series.
+                Must be specified if `data` is not given.
+            n_timepoints : int
+                Length of time series. Must be specified if `data` is not
+                given.
+            maxlag : int
+                Number of time steps in each temporal motifs/sequence. Must be
+                specified.
+            n_components : int
+                Number of temporal motifs/sequences. Must be specified.
+        """
+
+        if data is None:
+            if (n_features is None) or (n_timepoints is None):
+                raise ValueError("Must either specify 'data' or ('n_features' "
+                                 "and 'n_timepoints').")
+        else:
+            n_features, n_timepoints = data.shape
+
+        if maxlag is None:
+            raise ValueError("Must specify 'n_lags'.")
+
+        if n_components is None:
+            raise ValueError("Must specify 'n_components'.")
+
+        self.n_features = n_features
+        self.n_timepoints = n_timepoints
+        self.maxlag = maxlag
+        self.n_components = n_components
+
+    def __iter__(self):
+        """Iterator over model dimensions."""
+        yield from self.__dict__.items()
+
+
 class CMF(object):
     """
     Convolutive Matrix Factorization (CNMF)
@@ -90,19 +138,12 @@ class CMF(object):
         if (data < 0).any():
             raise ValueError('Negative values in data to fit')
 
-        # Initialize W and H.
-        n_features, n_time = data.shape
+        # Determine dimensions of model.
+        dims = ModelDimensions(
+            data, maxlag=self.maxlag, n_components=self.n_components)
 
-        self._W = npr.rand(self.maxlag, n_features, self.n_components)
-        self._H = npr.rand(self.n_components, n_time)
-
-        est = self.predict()
-        alpha = (data * est).sum() / la.norm(est)**2
-
-        # Create algorithm helper class.
-        alg_class = ALGORITHMS[self.alg_name]
-        algorithm = alg_class(
-            data, alpha * self._W, alpha * self._H, **self.alg_opts)
+        # Initialize algorithm class.
+        algorithm = ALGORITHMS[self.alg_name](data, dims, **self.alg_opts)
 
         # Set up optimization tracking.
         self.loss_hist = [algorithm.loss]

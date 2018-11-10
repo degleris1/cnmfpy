@@ -5,6 +5,7 @@ import numpy.linalg as la
 from numpy.testing import assert_allclose
 
 from cmfpy import CMF
+from cmfpy.model import ModelDimensions
 from cmfpy.initialize import init_rand
 from cmfpy.algs.gradient_descent import GradDescent, BlockDescent
 from cmfpy.datasets import Synthetic
@@ -34,7 +35,8 @@ def test_gradients(algclass, L, K):
     H = rs.rand(K, T)
 
     # Initialize algorithm.
-    alg = algclass(DATA, W.copy(), H.copy())
+    dims = ModelDimensions(DATA, maxlag=L, n_components=K)
+    alg = algclass(DATA, dims, initW=W, initH=H)
 
     # Computed gradients.
     gW = alg.gW
@@ -44,12 +46,12 @@ def test_gradients(algclass, L, K):
     # for computing loss through algorithm class interface.
     def loss_W(w_vec):
         _W = w_vec.reshape((L, N, K))
-        _alg = algclass(DATA, _W, H)
+        _alg = algclass(DATA, dims, initW=_W, initH=H)
         return _alg.unnormalized_loss
 
     def loss_H(h_vec):
         _H = h_vec.reshape((K, T))
-        _alg = algclass(DATA, W, _H)
+        _alg = algclass(DATA, dims, initW=W, initH=_H)
         return _alg.unnormalized_loss
 
     # Compute approximate gradients.
