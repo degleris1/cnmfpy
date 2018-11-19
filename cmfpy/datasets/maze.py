@@ -3,27 +3,33 @@ from scipy.io import loadmat
 import h5py
 import os
 
-DATAPATH = os.path.expanduser("~/cmf_data/NoveltySessInfoMatFiles/Achilles_10252013_sessInfo.mat")
+DATAPATH = os.path.expanduser(
+    "~/cmf_data/NoveltySessInfoMatFiles/Achilles_10252013_sessInfo.mat")
+
 
 class Maze:
     """
     Silicon-Probe neural recordings from rats before, during, and after
-    a maze-running task. More information can be found at https://crcns.org/data-sets/hc/hc-11 
-    """    
+    a maze-running task.
 
-    def __init__(self, 
-                normalize=True, 
-                path=DATAPATH, 
-                start_time=0, 
-                end_time=200,
-                bin_time=1e-3):
+    Reference
+    ---------
+    https://crcns.org/data-sets/hc/hc-11
+    """
+
+    def __init__(self,
+                 normalize=True,
+                 path=DATAPATH,
+                 start_time=0,
+                 end_time=200,
+                 bin_time=1e-3):
 
         self.name = "maze"
         self.normalize = normalize
         self.path = path
-        self.start_time=start_time
-        self.end_time=end_time
-        self.bin_time=bin_time
+        self.start_time = start_time
+        self.end_time = end_time
+        self.bin_time = bin_time
 
     def generate(self):
         f = h5py.File(self.path, 'r')
@@ -60,7 +66,7 @@ class Maze:
         spike_indices = np.hstack((neuron_assignments, spike_times_binned))
         (unique_indices, counts) = np.unique(spike_indices, axis=0, return_counts=True)
 
-        data[unique_indices[:,0], unique_indices[:,1]] = counts
+        data[unique_indices[:, 0], unique_indices[:, 1]] = counts
 
         if self.normalize:
             data /= 1e-8 + np.linalg.norm(data, ord=1, axis=1, keepdims=True)

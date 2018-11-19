@@ -1,4 +1,5 @@
 import numpy as np
+from ..common import cmf_predict
 
 
 class Synthetic:
@@ -8,25 +9,28 @@ class Synthetic:
                  n_features=100,
                  n_lags=10,
                  n_timebins=1000,
-                 sparsity=0.8,
+                 W_sparsity=0.5,
+                 H_sparsity=0.9,
+                 noise_scale=1.0,
                  seed=None):
 
+        # Set data name and random state.
         self.name = "synthetic"
+        self.rs = np.random.RandomState(seed)
 
-        self.random_state = np.random.RandomState(seed)
+        # Generate random convolutional parameters
+        W = self.rs.rand(n_lags, n_features, n_components)
+        H = self.rs.rand(n_components, n_timebins)
 
-        # Low rank factors
-        self.W = self.random_state.rand(n_features, n_components)
-        self.H = self.random_state.rand(n_components, n_timebins)
-        self.W[self.W < sparsity] = 0
-        self.H[self.H < sparsity] = 0
+        # Add sparsity to factors
+        self.W = W * self.rs.binomial(1, 1 - W_sparsity, size=W.shape)
+        self.H = H * self.rs.binomial(1, 1 - H_sparsity, size=H.shape)
 
-        # Create data by shifting each row by a random offset
-        lags = self.random_state.randint(0, n_lags, size=n_features)
-        data = []
-        for row, lag in zip(np.dot(self.W, self.H), lags):
-            data.append(np.roll(row, lag, axis=-1))
-        self.data = np.array(data)
+        # Determine noise
+        self.noise = noise_scale * self.rs.rand(n_features, n_timebins)
+
+        # Add noise to model prediction
+        self.data = cmf_predict(self.W, self.H) + self.noise
 
     def generate(self):
         return self.data
