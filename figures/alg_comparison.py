@@ -14,7 +14,8 @@ all_datasets = [
 
 all_algorithms = [
     "mult",
-    "hals",
+    # "hals",
+    "hals_fast",
     # "bcd",
     # "gd",
 ]

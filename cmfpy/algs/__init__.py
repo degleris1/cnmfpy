@@ -2,7 +2,7 @@
 
 from .gradient_descent import GradDescent, BlockDescent
 from .mult import MultUpdate
-from .hals import SimpleHALSUpdate
+from .hals import SimpleHALSUpdate, AdvancedHALSUpdate
 
 # from .mult import fit_mult, mult_step
 # from .chals import fit_chals
@@ -12,4 +12,5 @@ ALGORITHMS = {
     "bcd": BlockDescent,
     "mult": MultUpdate,
     "hals": SimpleHALSUpdate,
+    "hals_fast": AdvancedHALSUpdate,
 }

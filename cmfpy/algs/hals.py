@@ -76,3 +76,79 @@ class SimpleHALSUpdate(AbstractOptimizer):
         trace = np.dot(np.ravel(Wkt), np.ravel(-resid_slice))
 
         return np.maximum(trace / (norm_Wkt**2 + EPSILON), 0)
+
+
+class AdvancedHALSUpdate(SimpleHALSUpdate):
+    """
+    Advanced version of HALS update, updating T/L entries of `H` at a time.
+    """
+
+    def gen_resids_tens(self, resid, L, n_lay, N):
+        T_crop = L * n_lay
+
+        return resid[:, :T_crop].T.reshape(n_lay, L*N)
+
+    def gen_factors_tens(self, Wk, entries):
+        return np.outer(entries, Wk)
+
+    def expand_factors_tens(self, factors_tens, n_lay, L, N):
+        return factors_tens.reshape(L*n_lay, N).T
+
+    def clone_Wk(self, Wk, n_lay):
+        return np.outer(np.ones(n_lay), Wk)
+
+    def update_H(self):
+        L, N, K = self.W.shape
+        T = self.H.shape[1]
+
+        self.H[T-L:L] = 0
+        self.cache_resids()
+
+        # Set up norms of each column
+        # W_norms = la.norm(model.W, axis=1).T  # K * L, norm along N
+
+        # Update each component
+        for k in range(K):
+            Wk = self.W[:, :, k].ravel()
+            norm_Wk = la.norm(Wk)
+            # TODO update the last few entries in H
+
+            # Update each lag
+            for l in range(L):
+                entries = self.H[k, l:T-L:L]
+                n_lay = len(entries)
+
+                # Create residual and factor tensors
+                resid_tens = self.gen_resids_tens(self.resids, L, n_lay, N)
+                factors_tens = self.gen_factors_tens(Wk, entries)
+                # DEBUG
+                assert resid_tens.shape == factors_tens.shape
+
+                # Generate remainder
+                remainder = resid_tens - factors_tens
+
+                # Remove factor contribution to residual
+                self.resids[:, l:l+n_lay*L] += self.expand_factors_tens(
+                    factors_tens, n_lay, L, N)
+
+                # Clone Wk several times
+                Wk_clones = self.clone_Wk(Wk, n_lay)
+                assert Wk_clones.shape == remainder.shape
+
+                # Update H
+                self.H[k, l:T-L:L] = self.update_Hkl(Wk_clones,
+                                                     norm_Wk,
+                                                     remainder)
+
+                # Add factor contribution back to residual
+                new_entries = self.H[k, l:T-L:L]
+                new_factors_tens = self.gen_factors_tens(Wk, new_entries)
+                self.resids[:, l:l+n_lay*L] += self.expand_factors_tens(
+                    new_factors_tens, n_lay, L, N)
+
+                # TODO clean
+                # TODO update last entries
+
+    def update_Hkl(self, Wk_clones, norm_Wk, remainder):
+        traces = np.inner(Wk_clones, -remainder)[0]
+        return np.maximum(traces / (norm_Wk**2 + EPSILON), 0)
