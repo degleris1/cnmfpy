@@ -22,9 +22,9 @@ all_datasets = [
 ]
 
 all_algorithms = [
-    # "hals_fast",
-    "mult",
     "hals",
+    "mult",
+    "hals_simple",
     # "bcd",
     # "gd",
 ]
