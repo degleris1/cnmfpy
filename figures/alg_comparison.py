@@ -3,22 +3,7 @@ from cmfpy import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import palettable
-import itertools
 
-
-# List of all dataset objects.
-all_datasets = [
-    datasets.Synthetic(n_components=5),
-    datasets.SongbirdHVC(),
-]
-
-all_algorithms = [
-    "mult",
-    # "hals",
-    "hals_fast",
-    # "bcd",
-    # "gd",
-]
 
 # Tunable parameters shared by all datasets/algorithms.
 model_options = {
@@ -27,6 +12,24 @@ model_options = {
     "tol": 0,
     # "max_time": 20.0,  # TODO -- make this an option.
 }
+
+# List of all dataset objects.
+all_datasets = [
+    datasets.Synthetic(n_components=model_options["n_components"],
+                       n_lags=model_options["maxlag"],
+                       n_features=90, n_timebins=1000),
+    datasets.SongbirdHVC(),
+]
+
+all_algorithms = [
+    # "hals_fast",
+    "mult",
+    "hals",
+    # "bcd",
+    # "gd",
+]
+
+
 plot_options = {
     "lw": 2,
     "alpha": 0.8,

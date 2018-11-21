@@ -2,7 +2,7 @@ import numpy as np
 import numpy.linalg as la
 
 from .base import AbstractOptimizer, EPSILON
-from ..common import shift_and_stack
+from ..common import shift_and_stack, cmf_predict
 
 
 class SimpleHALSUpdate(AbstractOptimizer):
@@ -31,13 +31,23 @@ class SimpleHALSUpdate(AbstractOptimizer):
 
         for k in range(K):
             for l in range(L):
-                ind = l*K + k
+                self.update_W_col(k, l, H_unfold, H_norms)
 
-                self.resids -= np.outer(self.W[l, :, k], H_unfold[ind, :])
-                self.W[l, :, k] = self.new_W_col(H_unfold[ind, :],
-                                                 H_norms[ind],
-                                                 self.resids)
-                self.resids += np.outer(self.W[l, :, k], H_unfold[ind, :])
+    def update_W_col(self, k, l, H_unfold, H_norms):
+        L, N, K = self.W.shape
+        ind = l*K + k
+
+        self.resids -= np.outer(self.W[l, :, k], H_unfold[ind, :])
+        self.W[l, :, k] = self.next_W_col(H_unfold[ind, :],
+                                          H_norms[ind],
+                                          self.resids)
+        self.resids += np.outer(self.W[l, :, k], H_unfold[ind, :])
+
+    def next_W_col(self, Hkl, norm_Hkl, resid):
+        """
+        """
+        # TODO reconsider transpose
+        return np.maximum(np.dot(-resid, Hkl) / (norm_Hkl**2 + EPSILON), 0)
 
     def update_H(self):
         L, N, K = self.W.shape
@@ -52,28 +62,28 @@ class SimpleHALSUpdate(AbstractOptimizer):
 
             # Update each timebin
             for t in range(T):
-                # TODO could use some help with indentation here
-                resid_slice = (self.resids[:, t:t+L]
-                               - self.H[k, t] * Wk[:, :T-t])
+                self.update_H_entry(k, t, Wk, W_norms)
 
-                norm_Wkt = np.sqrt(np.sum(W_norms[k, :T-t]**2))
-                self.H[k, t] = self.new_H_entry(Wk[:, :T-t],
-                                                norm_Wkt,
-                                                resid_slice)
+    def update_H_entry(self, k, t, Wk, W_norms):
+        """
+        Update a single entry of `H`.
+        """
+        L, N, K = self.W.shape
+        T = self.H.shape[1]
 
-                self.resids[:, t:t+L] = (resid_slice
-                                         + self.H[k, t] * Wk[:, :T-t])
+        # Remove factor from residual
+        remainder = self.resids[:, t:t+L] - self.H[k, t] * Wk[:, :T-t]
 
-    def new_W_col(self, Hkl, norm_Hkl, resid):
+        norm_Wkt = np.sqrt(np.sum(W_norms[k, :T-t]**2))
+        self.H[k, t] = self.next_H_entry(Wk[:, :T-t], norm_Wkt, remainder)
+
+        # Add factor back to residual
+        self.resids[:, t:t+L] = remainder + self.H[k, t] * Wk[:, :T-t]
+
+    def next_H_entry(self, Wkt, norm_Wkt, remainder):
         """
         """
-        # TODO reconsider transpose
-        return np.maximum(np.dot(-resid, Hkl) / (norm_Hkl**2 + EPSILON), 0)
-
-    def new_H_entry(self, Wkt, norm_Wkt, resid_slice):
-        """
-        """
-        trace = np.dot(np.ravel(Wkt), np.ravel(-resid_slice))
+        trace = np.dot(np.ravel(Wkt), np.ravel(-remainder))
 
         return np.maximum(trace / (norm_Wkt**2 + EPSILON), 0)
 
@@ -83,29 +93,23 @@ class AdvancedHALSUpdate(SimpleHALSUpdate):
     Advanced version of HALS update, updating T/L entries of `H` at a time.
     """
 
-    def gen_resids_tens(self, resid, L, n_lay, N):
-        T_crop = L * n_lay
+    def __init__(self, data, dims, patience=3, tol=1e-5, **kwargs):
+        # Create zero padded residuals
+        self.resids_pad = np.zeros((dims.n_features,
+                                    dims.n_timepoints + dims.maxlag))
 
-        return resid[:, :T_crop].T.reshape(n_lay, L*N)
+        super().__init__(data, dims, patience, tol, **kwargs)
 
-    def gen_factors_tens(self, Wk, entries):
-        return np.outer(entries, Wk)
-
-    def expand_factors_tens(self, factors_tens, n_lay, L, N):
-        return factors_tens.reshape(L*n_lay, N).T
-
-    def clone_Wk(self, Wk, n_lay):
-        return np.outer(np.ones(n_lay), Wk)
+    def cache_resids(self):
+        """
+        Updates residual (zero padded)
+        """
+        super(AdvancedHALSUpdate, self).cache_resids()
+        self.resids_pad[:, :self.n_timepoints] = self.resids
 
     def update_H(self):
         L, N, K = self.W.shape
         T = self.H.shape[1]
-
-        self.H[T-L:L] = 0
-        self.cache_resids()
-
-        # Set up norms of each column
-        # W_norms = la.norm(model.W, axis=1).T  # K * L, norm along N
 
         # Update each component
         for k in range(K):
@@ -115,40 +119,82 @@ class AdvancedHALSUpdate(SimpleHALSUpdate):
 
             # Update each lag
             for l in range(L):
-                entries = self.H[k, l:T-L:L]
-                n_lay = len(entries)
+                batch = self.H[k, l:T:L]
 
-                # Create residual and factor tensors
-                resid_tens = self.gen_resids_tens(self.resids, L, n_lay, N)
-                factors_tens = self.gen_factors_tens(Wk, entries)
-                # DEBUG
-                assert resid_tens.shape == factors_tens.shape
+                n_batch = len(batch)
+                end_batch = l + L*n_batch
+                last_slice_crop = T - L*(n_batch - 1)
 
-                # Generate remainder
-                remainder = resid_tens - factors_tens
+                # Create residual tensor and factor tensor
+                resid_tens = self.fold_resids(l, n_batch)
+                factors_tens = self.fold_factor(Wk, batch)
 
-                # Remove factor contribution to residual
-                self.resids[:, l:l+n_lay*L] += self.expand_factors_tens(
-                    factors_tens, n_lay, L, N)
+                # TODO this is hacky... fix!
+                last_slice = self.W[:, :, k]
+                last_slice[last_slice_crop:, :] = 0
+                factors_tens[-1] = batch[-1] * last_slice.ravel()
+
+                # Create norms for the batch
+                # TODO only the last entry differs; is there a more efficient
+                # way to do this?
+                batch_norms = np.ones(n_batch) * norm_Wk
+                batch_norms[-1] = la.norm(self.W[:last_slice_crop, :, k])
 
                 # Clone Wk several times
-                Wk_clones = self.clone_Wk(Wk, n_lay)
-                assert Wk_clones.shape == remainder.shape
+                Wk_clones = self.clone_Wk(Wk, n_batch)
+
+                # DEBUG
+                assert resid_tens.shape == factors_tens.shape
+                assert Wk_clones.shape == resid_tens.shape
+
+                # Generate remainder (residual - factor) tensor and remove
+                # factor contribution from residual
+                remainder = resid_tens - factors_tens
+
+                self.resids_pad[:, l:end_batch] -= self.unfold_factor(
+                    factors_tens, n_batch
+                )
 
                 # Update H
-                self.H[k, l:T-L:L] = self.update_Hkl(Wk_clones,
-                                                     norm_Wk,
-                                                     remainder)
+                self.H[k, l:T:L] = self.new_H_batch(Wk_clones,
+                                                    batch_norms,
+                                                    remainder)
 
                 # Add factor contribution back to residual
-                new_entries = self.H[k, l:T-L:L]
-                new_factors_tens = self.gen_factors_tens(Wk, new_entries)
-                self.resids[:, l:l+n_lay*L] += self.expand_factors_tens(
-                    new_factors_tens, n_lay, L, N)
+                updated_batch = self.H[k, l:T:L]
+                new_factors_tens = self.fold_factor(Wk, updated_batch)
+                self.resids_pad[:, l:end_batch] += self.unfold_factor(
+                    new_factors_tens, n_batch
+                )
 
-                # TODO clean
-                # TODO update last entries
-
-    def update_Hkl(self, Wk_clones, norm_Wk, remainder):
+    def new_H_batch(self, Wk_clones, batch_norms, remainder):
         traces = np.inner(Wk_clones, -remainder)[0]
-        return np.maximum(traces / (norm_Wk**2 + EPSILON), 0)
+        return np.maximum(np.divide(traces, np.square(batch_norms) + EPSILON),
+                          0)
+
+    def fold_resids(self, start, n_batch):
+        """
+        Select the appropriate part of the residual matrix, and fold into
+        a tensor.
+        """
+        cropped = self.resids_pad[:, start:(start + self.maxlag * n_batch)]
+        return cropped.T.reshape(n_batch, self.maxlag*self.n_features)
+
+    def fold_factor(self, Wk, batch):
+        """
+        Generate factor prediction for a given component and lag. Then fold
+        into a tensor.
+        """
+        return np.outer(batch, Wk)
+
+    def unfold_factor(self, factors_tens, n_batch):
+        """
+        Expand the factor tensor into a matrix.
+        """
+        return factors_tens.reshape(self.maxlag*n_batch, self.n_features).T
+
+    def clone_Wk(self, Wk, n_batch):
+        """
+        Clone Wk several times and place into a tensor.
+        """
+        return np.outer(np.ones(n_batch), Wk)
