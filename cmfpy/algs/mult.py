@@ -1,10 +1,7 @@
 import numpy as np
 
 from ..common import cmf_predict, tensor_transconv, shift_cols
-from .base import AbstractOptimizer
-
-# TODO float or float32?
-EPSILON = np.finfo(np.float).eps
+from .base import AbstractOptimizer, EPSILON
 
 
 class MultUpdate(AbstractOptimizer):

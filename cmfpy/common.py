@@ -92,3 +92,16 @@ def shift_cols(X, lag):
         return X[:, -lag:]
     else:  # lag > 0
         return X[:, :-lag]
+
+
+def shift_and_stack(H, L):
+    """
+    Vertically stack several shifted copies of H.
+    """
+    K, T = H.shape
+
+    H_stacked = np.zeros((L*K, T))
+    for lag in range(L):
+        H_stacked[K*lag:K*(lag+1), lag:] = shift_cols(H, lag)
+
+    return H_stacked
