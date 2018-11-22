@@ -1,2 +1,2 @@
 from .visual import *
-from .dimensions import ModelDimensions
+from ..model import ModelDimensions
