@@ -8,9 +8,6 @@ import numpy as np
 from ..common import cmf_predict
 from numbers import Integral
 
-# TODO float or float32?
-EPSILON = np.finfo(np.float).eps
-
 
 class AbstractOptimizer:
     """Defines common API for optimizer objects."""

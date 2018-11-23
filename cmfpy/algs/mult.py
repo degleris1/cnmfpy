@@ -1,7 +1,7 @@
 import numpy as np
 
-from ..common import cmf_predict, tensor_transconv, shift_cols
-from .base import AbstractOptimizer, EPSILON
+from ..common import cmf_predict, tensor_transconv, shift_cols, EPSILON
+from .base import AbstractOptimizer
 
 
 class MultUpdate(AbstractOptimizer):

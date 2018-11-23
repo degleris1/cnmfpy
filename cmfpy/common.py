@@ -6,6 +6,10 @@ import numpy.linalg as la
 import numba
 
 
+EPSILON = np.finfo(np.float).eps
+FACTOR_MIN = 0
+
+
 def s_dot(A, B, shift):
     """
     Returns matrix multiplication between A and B, shifting columns of B.
