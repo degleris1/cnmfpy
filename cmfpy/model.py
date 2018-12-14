@@ -1,7 +1,5 @@
 """
 A Python implementation of CNMF.
-
-Written by Alex Williams and Anthony Degleris.
 """
 import numpy as np
 import numpy.random as npr
@@ -12,6 +10,7 @@ from tqdm import trange
 
 from .algs import ALGORITHMS
 from . import initialize
+from . import visualize
 
 from .common import cmf_predict
 
@@ -229,12 +228,50 @@ class CMF(object):
             raise NOT_FITTED_ERROR
 
     @property
+    def n_features(self):
+        return self.motifs.shape[1]
+
+    @property
+    def n_timesteps(self):
+        return self.factors.shape[1]
+
+    @property
     def factors(self):
         """Returns `H` (components x timebins) parameters."""
         try:
             return self._H
         except AttributeError:
             raise NOT_FITTED_ERROR
+
+    def argsort_units(self):
+        # Retrieve motifs (throws error if model not fitted).
+        W = self.motifs
+
+        # For each unit, find the component with which its loading is largest.
+        max_component_per_unit = np.argmax(np.sum(W, axis=0), axis=-1)
+
+        # Find the time of peak activity for each feature on its max component.
+        peak_activity = np.argmax(
+            W[:, np.arange(self.n_features), max_component_per_unit], axis=0)
+
+        # Lexographically sort units by component and time lag.
+        return np.lexsort((peak_activity, max_component_per_unit))
+
+    def plot(self, data=None, sort=True, **kwargs):
+        """
+        Visualizes data and model components.
+        """
+        # Get motifs and factors (throws error if model is not fitted).
+        W, H = self.motifs, self.factors
+
+        # Plot model prediction is data is not provided
+        data = self.predict() if data is None else data
+
+        # Reorder units by model factors
+        idx = self.argsort_units() if sort else np.arange(self.n_features)
+
+        # Call plotting function.
+        return visualize.plot_result(data[idx], W[:, idx, :], H, **kwargs)
 
 
 def compute_loadings(data, W, H):
