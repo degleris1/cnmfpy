@@ -11,10 +11,10 @@ class SimpleHALSUpdate(AcceleratedOptimizer):
     """
 
     def __init__(self, data, dims, patience=3, tol=1e-5,
-                 max_inner=4, weightW=1, weightH=0, inner_thresh=0, **kwargs):
+                 max_iter=1, weightW=1, weightH=1, stop_thresh=0, **kwargs):
         super().__init__(data, dims, patience=patience, tol=tol,
-                         max_inner=max_inner, weightW=weightW, weightH=weightH,
-                         inner_thresh=inner_thresh, **kwargs)
+                         max_iter=max_iter, weightW=weightW, weightH=weightH,
+                         stop_thresh=stop_thresh, **kwargs)
 
     """
     W update
@@ -94,20 +94,16 @@ class SimpleHALSUpdate(AcceleratedOptimizer):
         return np.maximum(trace / (norm_Wkt**2 + EPSILON), FACTOR_MIN)
 
 
-"""
-"""
-
-
 class HALSUpdate(SimpleHALSUpdate):
     """
     Advanced version of HALS update, updating T/L entries of `H` at a time.
     """
 
-    def __init__(self, data, dims, patience=3, tol=1e-5, max_inner=0,
-                 weightW=1, weightH=0, inner_thresh=0, **kwargs):
+    def __init__(self, data, dims, patience=3, tol=1e-5, max_iter=1,
+                 weightW=1, weightH=1, stop_thresh=0, **kwargs):
         super().__init__(data, dims, patience, tol,
-                         max_inner=max_inner, weightW=weightW, weightH=weightH,
-                         inner_thresh=inner_thresh, **kwargs)
+                         max_iter=max_iter, weightW=weightW, weightH=weightH,
+                         stop_thresh=stop_thresh, **kwargs)
 
         # Set up batches
         self.batch_inds = []
