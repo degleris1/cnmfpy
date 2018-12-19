@@ -1,5 +1,6 @@
 import numpy as np
 import numpy.linalg as la
+import numba
 
 from .accelerated import AcceleratedOptimizer
 from ..common import shift_and_stack, EPSILON, FACTOR_MIN
@@ -27,27 +28,7 @@ class SimpleHALSUpdate(AcceleratedOptimizer):
         self.H_norms = la.norm(self.H_unfold, axis=1)  # Compute norms
 
     def update_W(self):
-        L, N, K = self.W.shape
-        for k in range(K):
-            for l in range(L):
-                self.update_W_col(k, l)
-
-    def update_W_col(self, k, l):
-        L, N, K = self.W.shape
-        ind = l*K + k
-
-        self.resids -= np.outer(self.W[l, :, k], self.H_unfold[ind, :])
-        self.W[l, :, k] = self.next_W_col(self.H_unfold[ind, :],
-                                          self.H_norms[ind],
-                                          self.resids)
-        self.resids += np.outer(self.W[l, :, k], self.H_unfold[ind, :])
-
-    def next_W_col(self, Hkl, norm_Hkl, resid):
-        """
-        """
-        # TODO reconsider transpose
-        return np.maximum(np.dot(-resid, Hkl) / (norm_Hkl**2 + EPSILON),
-                          FACTOR_MIN)
+        _update_W(self.W, self.H_unfold, self.H_norms, self.resids)
 
     """
     H update
@@ -57,41 +38,7 @@ class SimpleHALSUpdate(AcceleratedOptimizer):
         self.W_norms = la.norm(self.W, axis=1).T  # K * L, norm along N
 
     def update_H(self):
-        K = self.W.shape[2]
-        T = self.H.shape[1]
-
-        for k in range(K):  # Update each component
-            for t in range(T):  # Update each timebin
-                self.update_H_entry(k, t)
-
-    def update_H_entry(self, k, t):
-        """
-        Update a single entry of `H`.
-        """
-        L, N, K = self.W.shape
-        T = self.H.shape[1]
-
-        # Collect cached data
-        Wk = self.W[:, :, k].T
-        # TODO is this valid?
-        # norm_Wkt = np.sqrt(np.sum(W_norms[k, :T-t]**2))
-        norm_Wkt = la.norm(self.W_norms[k, :T-t])
-
-        # Remove factor from residual
-        remainder = self.resids[:, t:t+L] - self.H[k, t] * Wk[:, :T-t]
-
-        # Update
-        self.H[k, t] = self.next_H_entry(Wk[:, :T-t], norm_Wkt, remainder)
-
-        # Add factor back to residual
-        self.resids[:, t:t+L] = remainder + self.H[k, t] * Wk[:, :T-t]
-
-    def next_H_entry(self, Wkt, norm_Wkt, remainder):
-        """
-        """
-        trace = np.dot(np.ravel(Wkt), np.ravel(-remainder))
-
-        return np.maximum(trace / (norm_Wkt**2 + EPSILON), FACTOR_MIN)
+        raise NotImplementedError("Must use full HALS optimzer.")
 
 
 class HALSUpdate(SimpleHALSUpdate):
@@ -127,83 +74,157 @@ class HALSUpdate(SimpleHALSUpdate):
             self.W_raveled.append(self.W[:, :, k].ravel())
             self.W_clones.append([])
             for l in range(L):
-                self.W_clones[k].append(self.clone_Wk(self.W_raveled[k],
-                                                      k, l))
+                self.W_clones[k].append(_clone_Wk(self.W_raveled[k],
+                                                  k, l, self.batch_sizes))
 
     def update_H(self):
-        L, N, K = self.W.shape
-        T = self.H.shape[1]
+        _update_H(self.W, self.H, self.resids,
+                  self.W_norms, self.W_raveled, self.W_clones,
+                  self.batch_inds, self.batch_sizes)
 
-        for k in range(K):  # Update each component
-            for l in range(L):  # Update each lag
-                self.update_H_batch(k, l)  # Update batch
-                self.update_H_entry(k, T-L+l)   # Update the last entry
 
-    def update_H_batch(self, k, l):
-        L, N, K = self.W.shape
+"""
+Internal methods
+"""
+
+
+@numba.jit(nopython=True)
+def _update_W(W, H_unfold, H_norms, resids):
+    L, N, K = W.shape
+    for k in range(K):
+        for l in range(L):
+            _update_W_col(k, l, W, H_unfold, H_norms, resids)
+
+
+@numba.jit(nopython=True)
+def _update_W_col(k, l, W, H_unfold, H_norms, resids):
+    L, N, K = W.shape
+    ind = l*K + k
+
+    resids -= np.outer(W[l, :, k], H_unfold[ind, :])
+    W[l, :, k] = _next_W_col(H_unfold[ind, :], H_norms[ind], resids)
+    resids += np.outer(W[l, :, k], H_unfold[ind, :])
+
+
+@numba.jit(nopython=True)
+def _next_W_col(Hkl, norm_Hkl, resid):
+    """
+    """
+    # TODO reconsider transpose
+    return np.maximum(np.dot(-resid, Hkl) / (norm_Hkl**2 + EPSILON),
+                      FACTOR_MIN)
+
+
+def _clone_Wk(Wk, k, l, batch_sizes):
+    """
+    Clone Wk several times and place into a tensor.
+    """
+    n_batch = batch_sizes[k][l]
+    return np.outer(np.ones(n_batch), Wk)
+
+
+@numba.jit()
+def _update_H(W, H, resids, W_norms, W_raveled, W_clones,
+              batch_inds, batch_sizes):
+    L, N, K = W.shape
+    T = H.shape[1]
+
+    for k in range(K):  # Update each component
+        for l in range(L):  # Update each lag
+            _update_H_batch(k, l, W, H, resids,
+                            W_raveled[k], W_clones[k][l],
+                            batch_inds[k][l], batch_sizes[k][l],
+                            la.norm(W_norms[k, :]))
+            _update_H_entry(k, T-L+l, W, H, resids, W_norms)
+
+
+@numba.jit()
+def _update_H_batch(k, l, W, H, resids, Wk, Wk_clones, batch_ind, n_batch,
+                    norm_Wk):
+    L, N, K = W.shape
+
+    # Set up batch
+    batch = H[k, batch_ind]
+    end_batch = l + L*n_batch
+
+    # Create residual tensor and factor tensor
+    resid_tens = _fold_resids(l, n_batch, resids, L, N)
+    factors_tens = _fold_factor(Wk, batch)
+
+    # Generate remainder (residual - factor) tensor and remove factor
+    # contribution from residual
+    remainder = resid_tens - factors_tens
+
+    # Subtract out factor from residual
+    resids[:, l:end_batch] -= _unfold_factor(factors_tens, n_batch, L, N)
+
+    # Update H
+    H[k, batch_ind] = _next_H_batch(Wk_clones, norm_Wk, remainder)
+
+    # Add factor contribution back to residual
+    updated_batch = H[k, batch_ind]
+    new_factors_tens = _fold_factor(Wk, updated_batch)
+    resids[:, l:end_batch] += _unfold_factor(new_factors_tens, n_batch, L, N)
+
+
+@numba.jit(nopython=True)
+def _update_H_entry(k, t, W, H, resids, W_norms):
+        """
+        Update a single entry of `H`.
+        """
+        L, N, K = W.shape
+        T = H.shape[1]
 
         # Collect cached data
-        Wk = self.W_raveled[k]
-        Wk_clones = self.W_clones[k][l]
-        batch_ind = self.batch_inds[k][l]
-        n_batch = self.batch_sizes[k][l]
-        norm_Wk = la.norm(self.W_norms[k, :])
+        Wk = W[:, :, k].T
+        # TODO is this valid?
+        # norm_Wkt = np.sqrt(np.sum(W_norms[k, :T-t]**2))
+        norm_Wkt = la.norm(W_norms[k, :T-t])
 
-        # Set up batch
-        batch = self.H[k, batch_ind]
-        end_batch = l + L*n_batch
+        # Remove factor from residual
+        remainder = resids[:, t:t+L] - H[k, t] * Wk[:, :T-t]
 
-        # Create residual tensor and factor tensor
-        resid_tens = self.fold_resids(l, n_batch)
-        factors_tens = self.fold_factor(Wk, batch)
+        # Update
+        H[k, t] = _next_H_entry(Wk[:, :T-t], norm_Wkt, remainder)
 
-        # Generate remainder (residual - factor) tensor and remove factor
-        # contribution from residual
-        remainder = resid_tens - factors_tens
+        # Add factor back to residual
+        resids[:, t:t+L] = remainder + H[k, t] * Wk[:, :T-t]
 
-        # Subtract out factor from residual
-        self.resids[:, l:end_batch] -= self.unfold_factor(
-            factors_tens, n_batch)
 
-        # Update H
-        self.H[k, batch_ind] = self.next_H_batch(Wk_clones,
-                                                 norm_Wk,
-                                                 remainder)
+@numba.jit(nopython=True)
+def _next_H_entry(Wkt, norm_Wkt, remainder):
+    trace = np.dot(np.ravel(Wkt), np.ravel(-remainder))
+    return np.maximum(trace / (norm_Wkt**2 + EPSILON), FACTOR_MIN)
 
-        # Add factor contribution back to residual
-        updated_batch = self.H[k, batch_ind]
-        new_factors_tens = self.fold_factor(Wk, updated_batch)
-        self.resids[:, l:end_batch] += self.unfold_factor(
-            new_factors_tens, n_batch)
 
-    def next_H_batch(self, Wk_clones, norm_Wk, remainder):
-        traces = np.inner(Wk_clones, -remainder)[0]
-        return np.maximum(np.divide(traces, norm_Wk**2 + EPSILON), FACTOR_MIN)
-
-    def fold_resids(self, start, n_batch):
-        """
-        Select the appropriate part of the residual matrix, and fold into
-        a tensor.
-        """
-        cropped = self.resids[:, start:(start + self.maxlag * n_batch)]
-        return cropped.T.reshape(n_batch, self.maxlag*self.n_features)
-
-    def fold_factor(self, Wk, batch):
-        """
-        Generate factor prediction for a given component and lag. Then fold
-        into a tensor.
-        """
-        return np.outer(batch, Wk)
-
-    def unfold_factor(self, factors_tens, n_batch):
+@numba.jit(nopython=True)
+def _unfold_factor(factors_tens, n_batch, L, N):
         """
         Expand the factor tensor into a matrix.
         """
-        return factors_tens.reshape(self.maxlag*n_batch, self.n_features).T
+        return factors_tens.reshape(L*n_batch, N).T
 
-    def clone_Wk(self, Wk, k, l):
-        """
-        Clone Wk several times and place into a tensor.
-        """
-        n_batch = self.batch_sizes[k][l]
-        return np.outer(np.ones(n_batch), Wk)
+
+@numba.jit(nopython=True)
+def _fold_factor(Wk, batch):
+    """
+    Generate factor prediction for a given component and lag. Then fold
+    into a tensor.
+    """
+    return np.outer(batch, Wk)
+
+
+@numba.jit()
+def _fold_resids(start, n_batch, resids, L, N):
+    """
+    Select the appropriate part of the residual matrix, and fold into
+    a tensor.
+    """
+    cropped = resids[:, start:(start + L * n_batch)]
+    return cropped.T.reshape(n_batch, L*N)
+
+
+@numba.jit()
+def _next_H_batch(Wk_clones, norm_Wk, remainder):
+        traces = np.inner(Wk_clones, -remainder)[0]
+        return np.maximum(np.divide(traces, norm_Wk**2 + EPSILON), FACTOR_MIN)
