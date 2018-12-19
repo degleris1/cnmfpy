@@ -6,42 +6,7 @@ from .accelerated import AcceleratedOptimizer
 from ..common import shift_and_stack, EPSILON, FACTOR_MIN
 
 
-class SimpleHALSUpdate(AcceleratedOptimizer):
-    """
-    HALS update rule.
-    """
-
-    def __init__(self, data, dims, patience=3, tol=1e-5,
-                 max_iter=1, weightW=1, weightH=1, stop_thresh=0, **kwargs):
-        super().__init__(data, dims, patience=patience, tol=tol,
-                         max_iter=max_iter, weightW=weightW, weightH=weightH,
-                         stop_thresh=stop_thresh, **kwargs)
-
-    """
-    W update
-    """
-
-    def setup_W_update(self):
-        L, N, K = self.W.shape
-
-        self.H_unfold = shift_and_stack(self.H, L)  # Unfold matrices
-        self.H_norms = la.norm(self.H_unfold, axis=1)  # Compute norms
-
-    def update_W(self):
-        _update_W(self.W, self.H_unfold, self.H_norms, self.resids)
-
-    """
-    H update
-    """
-
-    def setup_H_update(self):
-        self.W_norms = la.norm(self.W, axis=1).T  # K * L, norm along N
-
-    def update_H(self):
-        raise NotImplementedError("Must use full HALS optimzer.")
-
-
-class HALSUpdate(SimpleHALSUpdate):
+class HALSUpdate(AcceleratedOptimizer):
     """
     Advanced version of HALS update, updating T/L entries of `H` at a time.
     """
@@ -62,6 +27,23 @@ class HALSUpdate(SimpleHALSUpdate):
                 batch = range(l, self.n_timepoints-self.maxlag, self.maxlag)
                 self.batch_inds[k].append(batch)
                 self.batch_sizes[k].append(len(batch))
+
+    """
+    W update
+    """
+
+    def setup_W_update(self):
+        L, N, K = self.W.shape
+
+        self.H_unfold = shift_and_stack(self.H, L)  # Unfold matrices
+        self.H_norms = la.norm(self.H_unfold, axis=1)  # Compute norms
+
+    def update_W(self):
+        _update_W(self.W, self.H_unfold, self.H_norms, self.resids)
+
+    """
+    H update
+    """
 
     def setup_H_update(self):
         L, N, K = self.W.shape
@@ -84,7 +66,7 @@ class HALSUpdate(SimpleHALSUpdate):
 
 
 """
-Internal methods
+Internal methods for W update
 """
 
 
@@ -121,6 +103,11 @@ def _clone_Wk(Wk, k, l, batch_sizes):
     """
     n_batch = batch_sizes[k][l]
     return np.outer(np.ones(n_batch), Wk)
+
+
+"""
+Internal methods for H update
+"""
 
 
 @numba.jit()
