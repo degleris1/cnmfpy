@@ -1,9 +1,9 @@
-import pyximport; pyximport.install()
+# import pyximport; pyximport.install()
 import numpy as np
 import numpy.linalg as la
 import numba
-from . import cy_hals
 
+# from . import cy_hals
 from .accelerated import AcceleratedOptimizer
 from ..common import shift_and_stack, EPSILON, FACTOR_MIN
 
@@ -72,7 +72,7 @@ Internal methods for W update
 """
 
 
-@numba.jit(nopython=True, nogil=True)
+@numba.jit(nopython=True)
 def _update_W(W, H_unfold, H_norms, resids):
     L, N, K = W.shape
     for k in range(K):
@@ -80,7 +80,7 @@ def _update_W(W, H_unfold, H_norms, resids):
             _update_W_col(k, l, W, H_unfold, H_norms, resids)
 
 
-@numba.jit(nopython=True, nogil=True)
+@numba.jit(nopython=True)
 def _update_W_col(k, l, W, H_unfold, H_norms, resids):
     L, N, K = W.shape
     ind = l*K + k
@@ -90,7 +90,7 @@ def _update_W_col(k, l, W, H_unfold, H_norms, resids):
     resids += np.outer(W[l, :, k], H_unfold[ind, :])
 
 
-@numba.jit(nopython=True, nogil=True)
+@numba.jit(nopython=True)
 def _next_W_col(Hkl, norm_Hkl, resid):
     """
     """

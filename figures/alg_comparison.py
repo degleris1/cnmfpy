@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import palettable
 
-
 # Tunable parameters shared by all datasets/algorithms.
 model_options = {
     "n_components": 5,
@@ -24,7 +23,6 @@ all_datasets = [
 all_algorithms = [
     "hals",
     "mult",
-    # "hals_simple",
     # "bcd",
     # "gd",
 ]
@@ -42,6 +40,11 @@ colors = palettable.tableau.BlueRed_6.mpl_colors
 fig, axes = plt.subplots(1, len(all_datasets), sharey=True)
 axes = np.atleast_1d(axes)
 
+# DEBUG
+# Warm start HALS
+hals_model = CMF(alg_name="hals", n_components=3, maxlag=5, n_iter_max=2)
+hals_model.fit(all_datasets[0].generate())
+
 # Iterate over datasets.
 for data, ax in zip(all_datasets, axes):
 
@@ -53,16 +56,16 @@ for data, ax in zip(all_datasets, axes):
         model.fit(data.generate())
 
         # Plot learning curve.
-        # ax.plot(model.time_hist, model.loss_hist,
-        #         color=color, label=method, **plot_options)
-        ax.plot(model.loss_hist,
+        ax.plot(model.time_hist, model.loss_hist,
                 color=color, label=method, **plot_options)
+        # ax.plot(model.loss_hist,
+        #         color=color, label=method, **plot_options)
         ax.set_title(data.name)
 
 # Format subplots
 axes[0].set_ylabel("loss")
 for ax in axes:
-    ax.set_xlabel("iterations")
+    ax.set_xlabel("seconds")
 axes[-1].legend()
 fig.tight_layout()
 # fig.savefig("01_alg_comparison.pdf")

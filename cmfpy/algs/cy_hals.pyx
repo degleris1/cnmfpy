@@ -21,19 +21,49 @@ cpdef void _update_W_col(int k, int l,
                          double[:, :] H_unfold,
                          double[:] H_norms,
                          double[:, :] resids):
+    cdef int N = W.shape[1]
     cdef int K = W.shape[2]
+    cdef int T = resids.shape[1]
     cdef int ind = l*K + k
 
-    resids -= np.outer(W[l, :, k], H_unfold[ind, :])
-    W[l, :, k] = _next_W_col(H_unfold[ind, :], H_norms[ind], resids)
-    resids += np.outer(W[l, :, k], H_unfold[ind, :])
+    cdef double [:, :] factor = np.outer(W[l, :, k], H_unfold[ind, :])
+    with nogil:
+        for n in range(N):
+            for t in range(T):
+                resids[n, t] -= factor[n, t]
+
+    W[l, :, k] =  _next_W_col(H_unfold[ind, :],
+                              H_norms[ind],
+                              resids)
+
+    factor = np.outer(W[l, :, k], H_unfold[ind, :])
+    with nogil:
+        for n in range(N):
+            for t in range(T):
+                resids[n, t] += factor[n, t]
 
 
-cpdef double[:] _next_W_col(double[:] Hkl,
+cpdef double [:] _next_W_col(double[:] Hkl,
                             double norm_Hkl,
                             double[:, :] resid):
     return np.maximum(-np.dot(resid, Hkl) / (norm_Hkl**2 + EPSILON),
                       FACTOR_MIN)
+
+
+# cdef void _next_W_col_fast(double[:] Hkl,
+#                            double norm_Hkl,
+#                            double[:, :] resid,
+#                            double[:] result):
+#     cdef int N = resid.shape[0]
+#     cdef int T = resid.shape[1]
+#     cdef double dot
+    
+#     for n in range(N):
+#         dot = 0
+#         with nogil:
+#             for t in range(T):
+#                 dot += resid[n, t] * Hkl[t]
+#         result[n] = max(-dot / (norm_Hkl**2 + EPSILON), FACTOR_MIN)
 
 
 """
