@@ -27,6 +27,7 @@ class AbstractOptimizer:
         self.X = data
         self.normX = la.norm(data)
         self.resids = None
+        self.est = None
 
         # Hyperparameters
         self.patience = patience
