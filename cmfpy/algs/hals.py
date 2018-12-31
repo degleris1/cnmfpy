@@ -1,7 +1,7 @@
 # import pyximport; pyximport.install()
 import numpy as np
 import numpy.linalg as la
-import numba
+# import numba
 
 # from . import cy_hals
 from .accelerated import AcceleratedOptimizer
@@ -72,7 +72,7 @@ Internal methods for W update
 """
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def _update_W(W, H_unfold, H_norms, resids):
     L, N, K = W.shape
     for k in range(K):
@@ -80,7 +80,7 @@ def _update_W(W, H_unfold, H_norms, resids):
             _update_W_col(k, l, W, H_unfold, H_norms, resids)
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def _update_W_col(k, l, W, H_unfold, H_norms, resids):
     L, N, K = W.shape
     ind = l*K + k
@@ -90,7 +90,7 @@ def _update_W_col(k, l, W, H_unfold, H_norms, resids):
     resids += np.outer(W[l, :, k], H_unfold[ind, :])
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def _next_W_col(Hkl, norm_Hkl, resid):
     """
     """
@@ -104,7 +104,7 @@ Internal methods for H update
 """
 
 
-@numba.jit()
+# @numba.jit()
 def _update_H(W, H, resids, W_norms, W_raveled, W_clones,
               batch_inds, batch_sizes):
     L, N, K = W.shape
@@ -119,7 +119,7 @@ def _update_H(W, H, resids, W_norms, W_raveled, W_clones,
             _update_H_entry(k, T-L+l, W, H, resids, W_norms)
 
 
-@numba.jit()
+# @numba.jit()
 def _update_H_batch(k, l, W, H, resids, Wk, Wk_clones, batch_ind, n_batch,
                     norm_Wk):
     L, N, K = W.shape
@@ -148,7 +148,7 @@ def _update_H_batch(k, l, W, H, resids, Wk, Wk_clones, batch_ind, n_batch,
     resids[:, l:end_batch] += _unfold_factor(new_factors_tens, n_batch, L, N)
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def _update_H_entry(k, t, W, H, resids, W_norms):
         """
         Update a single entry of `H`.
@@ -172,13 +172,13 @@ def _update_H_entry(k, t, W, H, resids, W_norms):
         resids[:, t:t+L] = remainder + H[k, t] * Wk[:, :T-t]
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def _next_H_entry(Wkt, norm_Wkt, remainder):
     trace = np.dot(np.ravel(Wkt), np.ravel(-remainder))
     return np.maximum(trace / (norm_Wkt**2 + EPSILON), FACTOR_MIN)
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def _unfold_factor(factors_tens, n_batch, L, N):
         """
         Expand the factor tensor into a matrix.
@@ -186,7 +186,7 @@ def _unfold_factor(factors_tens, n_batch, L, N):
         return factors_tens.reshape(L*n_batch, N).T
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def _fold_factor(Wk, batch):
     """
     Generate factor prediction for a given component and lag. Then fold
@@ -195,7 +195,7 @@ def _fold_factor(Wk, batch):
     return np.outer(batch, Wk)
 
 
-@numba.jit()
+# @numba.jit()
 def _fold_resids(start, n_batch, resids, L, N):
     """
     Select the appropriate part of the residual matrix, and fold into
@@ -205,7 +205,7 @@ def _fold_resids(start, n_batch, resids, L, N):
     return cropped.T.reshape(n_batch, L*N)
 
 
-@numba.jit()
+# @numba.jit()
 def _next_H_batch(Wk_clones, norm_Wk, remainder):
         traces = np.inner(Wk_clones, -remainder)[0]
         return np.maximum(np.divide(traces, norm_Wk**2 + EPSILON), FACTOR_MIN)
