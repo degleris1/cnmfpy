@@ -147,7 +147,7 @@ def _update_H_batch(k, l, W, H, resids, Wk, Wk_clones, batch_ind, n_batch,
     new_factors_tens = _fold_factor(Wk, updated_batch)
     resids[:, l:end_batch] += _unfold_factor(new_factors_tens, n_batch, L, N)
 
-
+   
 # @numba.jit(nopython=True)
 def _update_H_entry(k, t, W, H, resids, W_norms):
         """
@@ -180,10 +180,10 @@ def _next_H_entry(Wkt, norm_Wkt, remainder):
 
 # @numba.jit(nopython=True)
 def _unfold_factor(factors_tens, n_batch, L, N):
-        """
-        Expand the factor tensor into a matrix.
-        """
-        return factors_tens.reshape(L*n_batch, N).T
+    """
+    Expand the factor tensor into a matrix.
+    """
+    return factors_tens.reshape(L*n_batch, N).T
 
 
 # @numba.jit(nopython=True)
