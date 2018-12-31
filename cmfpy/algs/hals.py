@@ -58,8 +58,8 @@ class HALSUpdate(AcceleratedOptimizer):
             self.W_raveled.append(self.W[:, :, k].ravel())
             self.W_clones.append([])
             for l in range(L):
-                self.W_clones[k].append(_clone_Wk(self.W_raveled[k],
-                                                  k, l, self.batch_sizes))
+                self.W_clones[k].append(np.tile(self.W_raveled[k],
+                                                (self.batch_sizes[k][l], 1)))
 
     def update_H(self):
         _update_H(self.W, self.H, self.resids,
@@ -147,7 +147,7 @@ def _update_H_batch(k, l, W, H, resids, Wk, Wk_clones, batch_ind, n_batch,
     new_factors_tens = _fold_factor(Wk, updated_batch)
     resids[:, l:end_batch] += _unfold_factor(new_factors_tens, n_batch, L, N)
 
-   
+
 # @numba.jit(nopython=True)
 def _update_H_entry(k, t, W, H, resids, W_norms):
         """
@@ -211,9 +211,9 @@ def _next_H_batch(Wk_clones, norm_Wk, remainder):
         return np.maximum(np.divide(traces, norm_Wk**2 + EPSILON), FACTOR_MIN)
 
 
-def _clone_Wk(Wk, k, l, batch_sizes):
-    """
-    Clone Wk several times and place into a tensor.
-    """
-    n_batch = batch_sizes[k][l]
-    return np.outer(np.ones(n_batch), Wk)
+# def _clone_Wk(Wk, k, l, batch_sizes):
+#     """
+#     Clone Wk several times and place into a tensor.
+#     """
+#     n_batch = batch_sizes[k][l]
+#     return np.outer(np.ones(n_batch), Wk)
