@@ -40,11 +40,6 @@ colors = palettable.tableau.BlueRed_6.mpl_colors
 fig, axes = plt.subplots(1, len(all_datasets), sharey=True)
 axes = np.atleast_1d(axes)
 
-# DEBUG
-# Warm start HALS
-hals_model = CMF(alg_name="hals", n_components=3, maxlag=5, n_iter_max=2)
-hals_model.fit(all_datasets[0].generate())
-
 # Iterate over datasets.
 for data, ax in zip(all_datasets, axes):
 
