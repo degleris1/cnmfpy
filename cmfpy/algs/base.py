@@ -85,7 +85,7 @@ class AbstractOptimizer:
         # Correct scale of parameters.
         est = cmf_predict(W, H)
         alpha = (self.X * est).sum() / la.norm(est)**2
-        return alpha * W, alpha * H
+        return np.sqrt(alpha) * W, np.sqrt(alpha) * H
 
     @property
     def loss(self):
